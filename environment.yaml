@@ -1,0 +1,33 @@
+name: asimow
+channels:
+  - conda-forge
+  - defaults
+  - nvidia
+  - pytorch
+dependencies:
+  - python=3.11
+  - numpy
+  - numba
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - dvc
+  - dvc-ssh
+  - openpyxl
+  - pip
+  - nptdms
+  - plotly
+  - wandb
+  - pytorch::pytorch
+  - nvidia::cudatoolkit=11.7
+  - torchvision
+  - torchaudio 
+  - lightning
+  - seaborn
+  - psycopg2
+  - python-dotenv
+  - pip:
+      - wvfreader
+      - h5py
+      - npTDMS
+      - tsaug
