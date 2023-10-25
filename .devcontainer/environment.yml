@@ -1,0 +1,29 @@
+channels:
+  - conda-forge
+  - defaults
+  - nvidia
+  - pytorch
+dependencies:
+  - python=3.11
+  - numpy
+  - numba
+  - pandas
+  - matplotlib
+  - plotly
+  - wandb
+  - scikit-learn
+  - pytorch::pytorch
+  - nvidia::cudatoolkit
+  - pytorch::torchvision
+  - pytorch::torchaudio 
+  - lightning
+  - openpyxl
+  - pip
+  - nptdms
+  - jupyterlab
+  - nb_conda_kernels
+  - jupyter_contrib_nbextensions
+  - mypy
+  - black
+  - pip:
+      - tsaug
