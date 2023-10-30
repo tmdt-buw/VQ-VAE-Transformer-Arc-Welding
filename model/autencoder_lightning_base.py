@@ -27,13 +27,13 @@ class Autoencoder(pl.LightningModule):
         self.learning_rate = learning_rate
         self.dropout_p = dropout_p
         self.n_resblocks = n_resblocks
-        self.num_embeddings = num_embeddings
+        self.num_embeddings: int = num_embeddings
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
         self.input_dim = input_dim
         self.learning_rate = learning_rate
         self.seq_len = seq_len
-        self.last_recon = []
+        self.last_recon = ()
 
         # optimizer params
         self.betas = (0.9, 0.95)
