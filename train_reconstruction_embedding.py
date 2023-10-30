@@ -2,7 +2,6 @@ import argparse
 import os
 import logging as log
 import torch
-import wandb
 import matplotlib
 from dataloader.asimow_dataloader import DataSplitId, ASIMoWDataModule
 from dataloader.latentspace_dataloader import LatentPredDataModule
@@ -36,14 +35,14 @@ def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger:
 
     seq_len = n_cycles
     input_dim = int(latent_model.embedding_dim * latent_model.enc_out_len)
-    Model: ClassificationLightningModule
+
+    Model: type[MLP] | type[GRU]
     if classification_model == "MLP":
         Model = MLP
     elif classification_model == "GRU":
         Model = GRU
     else:
         raise ValueError(f"Invalid classification model name: {classification_model}")
-
 
     model = Model(input_size=seq_len, in_dim=input_dim, hidden_sizes=128, dropout_p=0.1,
                     n_hidden_layers=4, output_size=2, learning_rate=learning_rate)
