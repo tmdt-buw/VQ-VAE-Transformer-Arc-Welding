@@ -16,8 +16,8 @@ The dataset is available at [zenodo](https://zenodo.org/records/10017718).
 Please download the processed dataset and put it in the `data` folder.
 
 ## Model
-- [VQ-VAE-Transformer](models/vqvae_transformer.py)
-- [VQ-VAE-Patch](models/vqvae_patch.py)
+- [VQ-VAE-Transformer](model/transformer_decoder.py)
+- [VQ-VAE-Patch](model/vq_vae_patch_embedd.py)
 
 
 ## Training
