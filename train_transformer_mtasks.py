@@ -27,7 +27,7 @@ def print_training_input_shape(data_module):
     for i in range(len(batch)):
         log.info(f"Input {i} shape: {batch[i].shape} type: {batch[i].dtype} max: {torch.max(batch[i])} min: {torch.min(batch[i])}")
 
-def get_latent_dataloader(n_cycles, model_wandb, val_ids, test_ids, batch_size, dataset_id, task):
+def get_latent_dataloader(n_cycles, model_wandb, val_ids, test_ids, batch_size, task) -> tuple[LatentPredDataModule, int, int]:
     model_name, model_path = get_metadata_and_artifact_dir(model_wandb)
     model_name = "VQ-VAE" if model_name == "VQ VAE" else model_name
 
@@ -43,7 +43,7 @@ def get_latent_dataloader(n_cycles, model_wandb, val_ids, test_ids, batch_size, 
     wandb_model_name = model_wandb.split("-")[-1]
     
     data_module = LatentPredDataModule(latent_space_model=model, model_name=f"{model_name}", val_data_ids=val_ids, test_data_ids=test_ids,
-                                        n_cycles=n_cycles, task=task, batch_size=batch_size, dataset_id=dataset_id, wandb_model_name=wandb_model_name)
+                                        n_cycles=n_cycles, task=task, batch_size=batch_size, wandb_model_name=wandb_model_name)
     
     num_embeddings = model.num_embeddings
     patch_size = int(model.patch_size) if hasattr(model, "patch_size") else 25
@@ -61,7 +61,6 @@ def get_new_trainer(epochs_steps, wandb_logger, gpus=1):
 
 
 def load_dataset(hparams, only_classify=False) -> tuple[int, int, LatentPredDataModule, LatentPredDataModule]:
-    dataset_id = 0
     batch_size = hparams.batch_size
     n_cycles = hparams.n_cycles
     model_wandb = hparams.model_wandb
@@ -79,11 +78,11 @@ def load_dataset(hparams, only_classify=False) -> tuple[int, int, LatentPredData
         gen_task_data_module = None 
     else:   
         gen_task_data_module, num_embeddings, patch_size = get_latent_dataloader(n_cycles, model_wandb, val_ids, test_ids, 
-                                                                 batch_size, dataset_id, task="autoregressive_ids")
+                                                                 batch_size, task="autoregressive_ids")
         print_training_input_shape(gen_task_data_module)
 
     class_task_data_module, num_embeddings,patch_size = get_latent_dataloader(n_cycles, model_wandb, val_ids, test_ids, 
-                                                                   batch_size, dataset_id, task="autoregressive_ids_classification")
+                                                                   batch_size, task="autoregressive_ids_classification")
     
     
     return num_embeddings, patch_size, class_task_data_module, gen_task_data_module

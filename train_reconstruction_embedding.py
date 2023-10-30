@@ -25,17 +25,16 @@ def print_training_input_shape(data_module):
     
 
 def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, wandb_logger: WandbLogger, val_ids: list[DataSplitId], 
-                          test_ids: list[DataSplitId], n_cycles: int, model_name: str, dataset: str, dataset_id: int,
+                          test_ids: list[DataSplitId], n_cycles: int, model_name: str, dataset: str,
                           classification_model: str, learning_rate: float, clipping_value: float):
     
         data_module = LatentPredDataModule(latent_space_model=latent_model, model_name=f"{model_name}", val_data_ids=val_ids, test_data_ids=test_ids,
-                                       n_cycles=n_cycles, task='classification', batch_size=128, dataset_id=dataset_id, 
-                                       wandb_model_name=f"{model_name}-{dataset}")	
+                                       n_cycles=n_cycles, task='classification', batch_size=128, wandb_model_name=f"{model_name}-{dataset}")	
         print_training_input_shape(data_module)
 
         seq_len = n_cycles
         input_dim = int(latent_model.embedding_dim * latent_model.enc_out_len)
-        
+        Model: MLP | GRU
         if classification_model == "MLP":
             Model = MLP
         elif classification_model == "GRU":
@@ -45,13 +44,13 @@ def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, wandb_l
 
 
         model = Model(input_size=seq_len, in_dim=input_dim, hidden_sizes=128, dropout_p=0.1,
-                      n_hidden_layers=4, output_size=2, learning_rate=learning_rate, model_id=str(dataset_id))
+                      n_hidden_layers=4, output_size=2, learning_rate=learning_rate)
         
         
         checkpoint_callback = ModelCheckpoint(
-            dirpath="checkpoints", monitor=f"{dataset_id}/val/f1_score", mode="max", filename=f"{model_name}-{dataset}-best")
+            dirpath="checkpoints", monitor=f"val/f1_score", mode="max", filename=f"{model_name}-{dataset}-best")
         early_stop_callback = EarlyStopping(
-            monitor=f"{dataset_id}/val/f1_score", min_delta=0.0001, patience=10, verbose=False, mode="max")
+            monitor=f"val/f1_score", min_delta=0.0001, patience=10, verbose=False, mode="max")
 
         trainer = Trainer(
             max_epochs=15,
@@ -183,7 +182,7 @@ def main(hparams):
     trainer.test(model=model, datamodule=data_module)
     
     classify_latent_space(latent_model=model, wandb_logger=wandb_logger, val_ids=val_ids, test_ids=test_ids, n_cycles=1, model_name=model_name, 
-                            dataset=dataset, dataset_id=dataset_id, classification_model="MLP", learning_rate=learning_rate, clipping_value=clipping_value)
+                            dataset=dataset, classification_model="MLP", learning_rate=learning_rate, clipping_value=clipping_value)
     
     wandb_logger.experiment.finish()
 
