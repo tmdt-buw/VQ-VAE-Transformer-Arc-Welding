@@ -296,8 +296,7 @@ class ASIMoWDataLoader(BaseDataloader):
 class ASIMoWDataModule(pl.LightningDataModule):
 
     def __init__(self, task: str, n_cycles: int, val_data_ids, test_data_ids, batch_size: int = 32, 
-                 model_id: int | None = None, multi_recon: bool = False, shuffle_val_test: bool = True,
-                 window_size: int = 200, window_offset: int = 0):
+                 shuffle_val_test: bool = True, window_size: int = 200, window_offset: int = 0):
         """
         Ligning Data Module for the ASIMoW dataset
         
@@ -307,9 +306,6 @@ class ASIMoWDataModule(pl.LightningDataModule):
             val_data_ids (list[DataSplitId]): list of DataSplitId which are used for validation
             test_data_ids (list[DataSplitId]): list of DataSplitId which are used for testing
             batch_size (int, optional): batch size. Defaults to 32.
-            model_id (int | None, optional): model id. Defaults to None.
-            multi_recon (bool, optional): multi reconstruction. Defaults to False.
-            use_augmentation (bool, optional): use augmentation. Defaults to False.
             shuffle_val_test (bool, optional): shuffle validation and test data. Defaults to True.
             window_size (int, optional): window size for the moving average. Defaults to 50.
             window_offset (int, optional): window offset for the moving average. Defaults to 10.
@@ -321,8 +317,6 @@ class ASIMoWDataModule(pl.LightningDataModule):
         self.val_ids = val_data_ids
         self.test_ids = test_data_ids
         self.batch_size = batch_size
-        self.model_id = model_id
-        self.multi_recon = multi_recon
         self.shuffle_val_test = shuffle_val_test
         self.window_size = window_size
         self.window_offset = window_offset
@@ -330,7 +324,7 @@ class ASIMoWDataModule(pl.LightningDataModule):
         self.train_sampling = None
         self.val_sampling = None
         self.test_sampling = None
-        self.asimow_dataloader = None
+        self.asimow_dataloader: ASIMoWDataLoader | None = None
 
     def get_sampling_weights(self, labels):
         ratio = np.mean(labels == 0)
@@ -391,8 +385,7 @@ def load_npy_data(config: argparse.Namespace, val_ids: list[DataSplitId], test_i
 
 
     data_module = ASIMoWDataModule(task=task, batch_size=config.batch_size, n_cycles=config.n_cycles,
-                                   model_id=0, val_data_ids=val_ids, test_data_ids=test_ids,
-                                   use_augmentation=bool(config.use_augmentation))
+                                   model_id=0, val_data_ids=val_ids, test_data_ids=test_ids)
 
     data_module.setup('fit')
 

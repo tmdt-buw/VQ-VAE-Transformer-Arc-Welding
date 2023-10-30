@@ -24,7 +24,7 @@ def print_training_input_shape(data_module):
     for i in range(len(batch)):
         log.info(f"Input {i} shape: {batch[i].shape} type: {batch[i].dtype}")
 
-def get_latent_dataloader(wandb_artifact_name: str, dataset_id: int, batch_size: int, val_ids: list[DataSplitId], test_ids: list[DataSplitId], n_cycles: int, use_ids: bool=False):
+def get_latent_dataloader(wandb_artifact_name: str,  batch_size: int, val_ids: list[DataSplitId], test_ids: list[DataSplitId], n_cycles: int, use_ids: bool=False):
     model_name, model_path = get_metadata_and_artifact_dir(wandb_artifact_name)
     latent_dim = 2
     model_name = "VQ-VAE" if model_name == "VQ VAE" else model_name
@@ -45,7 +45,7 @@ def get_latent_dataloader(wandb_artifact_name: str, dataset_id: int, batch_size:
     wandb_model_name = wandb_artifact_name.split("-")[-1]
     task = "classification_ids" if use_ids else "classification"
     data_module = LatentPredDataModule(latent_space_model=model, model_name=f"{model_name}", val_data_ids=val_ids, test_data_ids=test_ids,
-                                       n_cycles=n_cycles, task=task, batch_size=batch_size, dataset_id=dataset_id, wandb_model_name=wandb_model_name)
+                                       n_cycles=n_cycles, task=task, batch_size=batch_size, wandb_model_name=wandb_model_name)
     return data_module, latent_dim
 
 
@@ -68,16 +68,12 @@ def main(hparams):
     use_ids = bool(hparams.use_latent_ids)
     classification_model = model_name.split("-")[0]
     wandb_artifact_name = hparams.wandb_artifact_name
-    use_augmentation = bool(hparams.use_augmentation)
-
 
     data_dict = get_val_test_ids()
 
 
 
     input_dim = 2 if dataset == "asimow" else 1
-    dataset_id = 0
-
 
     val_ids = data_dict["val_ids"]
     test_ids = data_dict["test_ids"]
@@ -96,7 +92,7 @@ def main(hparams):
         
     if dataset == "asimow" or dataset == "asimow_out_of_dist":
         data_module = ASIMoWDataModule(task="classification", batch_size=batch_size, n_cycles=n_cycles,
-                                       model_id=dataset_id, val_data_ids=val_ids, test_data_ids=test_ids, use_augmentation=use_augmentation)
+                                       val_data_ids=val_ids, test_data_ids=test_ids)
         if classification_model == "MLP":
             seq_len = 200 * n_cycles
             input_dim = 2
@@ -110,7 +106,7 @@ def main(hparams):
             raise ValueError(f"Classification model name: {classification_model} not supported")
     elif dataset == "latent_vq_vae" or dataset == "latent_vae" or dataset == "latent_vq_vae_out_of_dist":
         data_module, latent_dim = get_latent_dataloader(
-            wandb_artifact_name=wandb_artifact_name, dataset_id=dataset_id, batch_size=batch_size, val_ids=val_ids, test_ids=test_ids, 
+            wandb_artifact_name=wandb_artifact_name, batch_size=batch_size, val_ids=val_ids, test_ids=test_ids, 
             n_cycles=n_cycles, use_ids=use_ids)
 
         seq_len = n_cycles
@@ -137,12 +133,12 @@ def main(hparams):
     
 
     model = Model(input_size=seq_len, in_dim=input_dim, hidden_sizes=hidden_dim, dropout_p=dropout_p,
-                      n_hidden_layers=n_hidden_layers, output_size=output_size, learning_rate=learning_rate, model_id=str(dataset_id))
+                      n_hidden_layers=n_hidden_layers, output_size=output_size, learning_rate=learning_rate)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath="checkpoints", monitor=f"{dataset_id}/val/f1_score_mean", mode="max", filename=f"{model_name}-{dataset}-best")
+        dirpath="checkpoints", monitor=f"val/f1_score_mean", mode="max", filename=f"{model_name}-{dataset}-best")
     early_stop_callback = EarlyStopping(
-        monitor=f"{dataset_id}/val/f1_score_mean", min_delta=0.001, patience=5, verbose=False, mode="max")
+        monitor=f"val/f1_score_mean", min_delta=0.001, patience=5, verbose=False, mode="max")
 
     trainer = Trainer(
         max_epochs=epochs,
@@ -199,9 +195,9 @@ if __name__ == '__main__':
     parser.add_argument('--clipping-value', type=float, help='Gradient Clipping', default=0.7)
     parser.add_argument('--dropout-p', type=float, help='Dropout propability', default=0.15)
     parser.add_argument('--n-hidden-layer', type=int, help='Number of hidden layers', default=4)
-    parser.add_argument('--model-name', type=str, help='Model name', default="GRU-VQ-VAE-Patch")
-    parser.add_argument('--dataset', type=str, help='Dataset', default="latent_vq_vae")
-    parser.add_argument('--n-cycles', type=int, help='Number of cycles', default=20)
+    parser.add_argument('--model-name', type=str, help='Model name', default="MLP")
+    parser.add_argument('--dataset', type=str, help='Dataset', default="asimow")
+    parser.add_argument('--n-cycles', type=int, help='Number of cycles', default=1)
     parser.add_argument('--use-latent-ids', type=int, help='If the dataset with latentspace IDs should be used', default=0)
     parser.add_argument('--wandb-artifact-name', type=str, help='Weights and Bias artifact name', default=model_wandb)
     args = parser.parse_args()
