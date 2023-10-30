@@ -4,15 +4,14 @@ import logging as log
 import torch
 import wandb
 import matplotlib
-from data_loader.asimow_dataloader import DataSplitId, ASIMoWDataModule
-from data_loader.latentspace_dataloader import LatentPredDataModule
-from model.vq_vae_multitask import VectorQuantizedMultiTask
+from dataloader.asimow_dataloader import DataSplitId, ASIMoWDataModule
+from dataloader.latentspace_dataloader import LatentPredDataModule
+from dataloader.utils import get_val_test_ids
 from model.vq_vae import VectorQuantizedVAE
 from model.vq_vae_patch_embedd import VQVAEPatch
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning import Trainer
-from select_val_test_set import get_val_test_ids, get_out_of_dist_dataset
 from model.mlp import MLP
 from model.gru import GRU
 
@@ -25,7 +24,7 @@ def print_training_input_shape(data_module):
         log.info(f"Input {i} shape: {batch[i].shape}")
     
 
-def classify_latent_space(latent_model: VectorQuantizedMultiTask | VectorQuantizedVAE | VQVAEPatch, wandb_logger: WandbLogger, val_ids: list[DataSplitId], 
+def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, wandb_logger: WandbLogger, val_ids: list[DataSplitId], 
                           test_ids: list[DataSplitId], n_cycles: int, model_name: str, dataset: str, dataset_id: int,
                           classification_model: str, learning_rate: float, clipping_value: float):
     
@@ -146,11 +145,6 @@ def main(hparams):
         model = VectorQuantizedVAE(
             wandb_logger=wandb_logger.experiment, input_dim=input_dim, hidden_dim=hidden_dim, num_embeddings=num_embeddings,
             embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, decoder_type=decoder_type,  dropout_p=dropout_p
-        )
-    elif model_name == "VQ-VAE2":
-        model = VectorQuantizedMultiTask(
-            wandb_logger=wandb_logger.experiment, input_dim=input_dim, hidden_dim=hidden_dim, num_embeddings=num_embeddings,
-            embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, decoder_type=decoder_type, dropout_p=dropout_p
         )
     elif model_name == "VQ-VAE-Patch":
         model = VQVAEPatch(

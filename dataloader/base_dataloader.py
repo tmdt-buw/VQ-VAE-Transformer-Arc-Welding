@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 import numpy as np
-from data_loader.utils import load_pickle_file, write_pickle_file, MyScaler, get_data_path
+from dataloader.utils import load_pickle_file, write_pickle_file, MyScaler, get_data_path
 from torch.nn import functional as F
 
 

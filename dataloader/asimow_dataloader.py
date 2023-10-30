@@ -5,9 +5,8 @@ import numpy as np
 from tqdm import tqdm 
 import torch
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler, RandomSampler
-from data_loader.base_dataloader import BaseDataloader
-from data_loader.utils import load_pickle_file, shuffle_np, shuffle_and_undersample
-from data_loader.augmentation import augment_ts
+from dataloader.base_dataloader import BaseDataloader
+from dataloader.utils import load_pickle_file, shuffle_np, shuffle_and_undersample
 
 import lightning.pytorch as pl
 from typing import Optional
@@ -28,52 +27,25 @@ class DataSplitId:
 
 class ASIMoWDataLoader(BaseDataloader):
 
-    def __init__(self, val_data_ids: list[DataSplitId], test_data_ids: list[DataSplitId], task: str,  cycle_seq_number: int = 1, use_augmentation: bool = False, seed: int = 42, 
+    def __init__(self, val_data_ids: list[DataSplitId], test_data_ids: list[DataSplitId], task: str,  cycle_seq_number: int = 1, seed: int = 42, 
                  data_directory_path: str | None = None, window_size: int = 200, window_offset: int = 0, **kwargs):
-        dataset_name = "asimow-augmented" if use_augmentation else "asimow"
+        dataset_name = "asimow"
         self.val_data_ids = val_data_ids
         self.test_data_ids = test_data_ids
         self.cycle_seq_number = cycle_seq_number
-        self.use_augmentation = use_augmentation
         self.window_size = window_size
         self.window_offset = window_offset
         super().__init__(dataset_name, task, seed, data_directory_path, **kwargs)
 
     def load_raw_data(self):
-        db_file_path = self.data_directory_path + "/db_dataframe/"
+        db_file_path = self.data_directory_path + "/processed_asimow_dataset.csv"
         log.info(f"Load data from {db_file_path}")
-        return load_pickle_file(data_path=db_file_path, file_name="cycles.pickle")
-    
-    def augment_asimow_data(self, data: np.ndarray, labels: np.ndarray, experiment: np.ndarray, welding_run: np.ndarray, t_wn: np.ndarray):
-        """
-        Augment the data with 8 different methods from the augmentation.py file.
-        The rest of the data must be repeated 9 times (1 original + 8 augmentations) to match the augmented data.
-
-        Args:
-            data (np.ndarray): data
-            labels (np.ndarray): labels
-            experiment (np.ndarray): experiment
-            welding_run (np.ndarray): welding_run
-            t_wn (np.ndarray): t_wn
-
-        Returns:
-            np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray: augmented data and repeated ids
-        """
-        data, labels = augment_ts(data, y=labels)
-        experiment = np.tile(experiment, 9)
-        welding_run = np.tile(welding_run, 9)
-        t_wn = np.tile(t_wn, 9)
-        return data, labels, experiment, welding_run, t_wn
+        return pd.read_csv(db_file_path)
 
 
     def preprocessing(self, data: pd.DataFrame):
-        log.info(f"Extend Labels - this could take a while")
-        data = self.extend_labels_and_return_quality_data(data)
         log.info(f"Extract Numpy arrays")
         data, labels, experiment, welding_run, t_wn = self.extract_vi_and_ids(data)
-        if self.use_augmentation:
-            log.info(f"Augment data")
-            data, labels, experiment, welding_run, t_wn = self.augment_asimow_data(data, labels, experiment, welding_run, t_wn)
         log.info(f"Convert to cycle shape")
         df = self.convert_to_cycle_dataframe(data, labels, experiment, welding_run, t_wn)
         return df
@@ -132,7 +104,16 @@ class ASIMoWDataLoader(BaseDataloader):
         return train_ds, val_ds, test_ds
 
     @staticmethod
-    def get_sampling_weights(labels):
+    def get_sampling_weights(labels: np.ndarray) -> np.ndarray:
+        """
+        Get sampling weigt for the weighted random sampler for the classification task 
+
+        Args:
+            labels (np.ndarray): labels
+
+        Returns:
+            np.ndarray: sampling weights for the weighted random sampler (shape: (num_samples,)
+        """
         ratio = np.mean(labels == 0)
         sampling_weights = np.zeros_like(labels, dtype=np.float32)
         sampling_weights[labels==0] = 1 - ratio
@@ -172,28 +153,19 @@ class ASIMoWDataLoader(BaseDataloader):
                                  num_workers=num_workers, pin_memory=pin_memory)
 
         return train_loader, val_loader, test_loader
-
-    def scale_shuffle_undersample_return_np(self, df: pd.DataFrame, ds_type: str = "train") -> tuple[np.ndarray, np.ndarray]:
-        """
-        @deprecated
-        undersampling is done in the dataloader with the torch sampler
-        """
-        x, y = self.get_numpy_array_from_dataframe(df)
-        if self.cycle_seq_number > 1:
-            x, y = self.create_sequence_ds(x, y, self.cycle_seq_number)
-        if ds_type == "train" and self.undersample:
-            x, y = shuffle_and_undersample(x, y)
-        else:
-            y = y.reshape(-1)
-            x, y = shuffle_np(x, y)
-        if self.scaler is not None:
-            if ds_type == "train":
-                self.scaler.fit(x)
-            x = self.scaler.transform(x)
-        x = x[:, self.window_offset:self.window_offset + self.window_size,:]
-        return x, y
     
     def scale_and_return_np(self, df: pd.DataFrame, ds_type:str="val") -> tuple[np.ndarray, np.ndarray]:
+        """
+        Uses a standard scaler to scale the data and returns it as a numpy array
+
+        Args:
+            df (pd.DataFrame): dataframe with the columns "quality", "t_wn", "experiment", "welding_run", "V" and "I"
+            ds_type (str, optional): train, val or test. Defaults to "val".
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: x (num_cycles, max_cycle_size, 2) and y (num_cycles,)
+        
+        """
         x, y = self.get_numpy_array_from_dataframe(df)
         if self.cycle_seq_number > 1:
             x, y = self.create_sequence_ds(x, y, self.cycle_seq_number)
@@ -205,16 +177,23 @@ class ASIMoWDataLoader(BaseDataloader):
             x = self.scaler.transform(x)
         if self.shuffle:
             x, y = shuffle_np(x, y)
-
-        # if self.use_augmentation and ds_type == "train":
-        #     log.info("Augmenting data")
-        #     x, y = augment_ts(x, y, seq_len=self.cycle_seq_number * 200)
        
 
         return x, y
 
 
     def create_sequence_ds(self, x: np.ndarray, y: np.ndarray, seq_len: int):
+        """
+        Create a dataset with a sequence of cycles.
+
+        Args:
+            x (np.ndarray): input data with the shape (num_cycles, max_cycle_size, 2)
+            y (np.ndarray): labels with the shape (num_cycles,)
+            seq_len (int): sequence length
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: x (num_cycles - seq_len, seq_len * max_cycle_size, 2) and y (num_cycles - seq_len,)
+        """
         new_x = np.zeros(
             (x.shape[0] - seq_len, self.window_size * seq_len, x.shape[2]))
         new_y = np.zeros((y.shape[0] - seq_len))
@@ -247,45 +226,24 @@ class ASIMoWDataLoader(BaseDataloader):
         return x, y
 
     @staticmethod
-    def convert_to_cycle_np_array(df: pd.DataFrame, max_size: int = 200) -> tuple[np.ndarray, np.ndarray]:
+    def convert_to_cycle_np_array(df: pd.DataFrame) -> tuple[np.ndarray, pd.DataFrame]:
         """
         Converts a dataframe to a numpy array with the shape (num_cycles, max_cycle_size, 2),
         where the last dimension is the voltage and current. 
 
         Args:
-            df (pd.DataFrame): dataframe with the columns "quality", "t_wn", "experiment", "welding_run", "V" and "I"
-            max_size (int, optional): max size of the cycles. Defaults to 200.
+            df (pd.DataFrame): dataframe with the columns "labels", "experiment", "welding_run", "V_0",..., "V_199" and "I_0", .. "I_199"
         Returns:
-            tuple[np.ndarray, np.ndarray]: tuple of a numpy array with voltage and current cyles and a numpy array with the labels 
+            tuple[np.ndarray, pd.DataFrame]: tuple of a numpy array with voltage and current cyles and a dataframe with the ids "quality", "experiment", "welding_run"
 
         """
-        quality = pd.DataFrame(
-            df[["quality", "t_wn", "experiment", "welding_run"]])
-        quality = pd.DataFrame(quality.iloc[1:])
-        quality = pd.DataFrame(quality.iloc[::4])
-        quality = pd.DataFrame(quality.groupby("t_wn").first().values)
 
-        new_cycles_v = df["V"].rolling(
-            4, step=4).mean().reset_index(drop=True).dropna()
-        new_cycles_i = df["I"].rolling(
-            4, step=4).mean().reset_index(drop=True).dropna()
-
-        t_wn = df.t_wn.values[::4]
-        t_wn = t_wn[1:]
-        df = pd.DataFrame(data=np.array(
-            [t_wn, new_cycles_v.values, new_cycles_i.values]).T, columns=["t_wn", "V", "I"])
-        df["t_wi"] = df.groupby("t_wn").cumcount()
-        v_cycles = df.pivot(index="t_wn", columns='t_wi', values="V")
-        i_cycles = df.pivot(index="t_wn", columns="t_wi", values="I")
-
-        v_cycles = v_cycles.fillna(method="ffill", axis=1).values
-        i_cycles = i_cycles.fillna(method="ffill", axis=1).values
-
-        v_cycles = v_cycles[:, :max_size].reshape(-1, 1, max_size)
-        i_cycles = i_cycles[:, :max_size].reshape(-1, 1, max_size)
-
-        vi = np.concatenate([v_cycles, i_cycles], axis=1)
-        return vi.swapaxes(1, 2), quality
+        df_ids = df[["experiment", "welding_run", "labels"]]
+        v_cycles = df.iloc[:, 3:203].to_numpy()
+        i_cycles = df.iloc[:, 203:].to_numpy()
+        
+        vi = np.concatenate([v_cycles.reshape(-1, 200, 1), i_cycles.reshape(-1, 200, 1)], axis=2)
+        return vi, df_ids
 
     @staticmethod
     def create_tuple_list(t_wn, experiment, welding_run, labels, vi_np_array: np.ndarray):
@@ -298,7 +256,7 @@ class ASIMoWDataLoader(BaseDataloader):
                               labels[i], vi_np_array[i, :, 0], vi_np_array[i, :, 1]))
         return tuple_list
     
-    def extract_vi_and_ids(self, df: pd.DataFrame, max_size: int = 200) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def extract_vi_and_ids(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Extracts the voltage and current cycles and their corresponding IDs from a dataframe and returns them as numpy arrays.
 
@@ -310,10 +268,10 @@ class ASIMoWDataLoader(BaseDataloader):
             tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]: current and voltage array, labels, experiment, welding_run, t_wn
         """
 
-        vi_np_array, df_ids = self.convert_to_cycle_np_array(df, max_size)
-        labels = df_ids.iloc[:, 0]
-        experiment = df_ids.iloc[:, 1]
-        welding_run = df_ids.iloc[:, 2]
+        vi_np_array, df_ids = self.convert_to_cycle_np_array(df)
+        labels = df_ids.labels.values
+        experiment = df_ids.experiment.values
+        welding_run = df_ids.welding_run.values
         t_wn = np.arange(0, vi_np_array.shape[0])
         return vi_np_array, labels, experiment, welding_run, t_wn
     
@@ -332,61 +290,13 @@ class ASIMoWDataLoader(BaseDataloader):
                           't_wn', 'experiment', 'welding_run', 'labels', 'V', 'I'])
         return df
 
-    @staticmethod
-    def extend_labels_and_return_quality_data(df: pd.DataFrame, cycle_before_quality_marker: float = 0.15):
-        """
-        Extend the quality labels up to the beginning of the quality marker before.
-        :param df: Dataframe with quality labels
-        :param cycle_before_quality_marker: How many cycles before the quality marker should the quality label be extended
-        :return: Dataframe with extended quality labels only consisting of data with quality labels
-        """
-        for experiment_i in [1, 2, 3]:
-            df_exp_i = df[df.experiment == experiment_i]
-            for w_i in tqdm(df_exp_i.welding_run.unique(), desc=f"Experiment {experiment_i}"):
-                df_w_i = pd.DataFrame(df_exp_i[df_exp_i.welding_run == w_i])
-                cycle_max = df_w_i.cycle.max()
-                new_cycle = int(cycle_max * cycle_before_quality_marker)
-                # print(f"{w_i=}, {cycle_max=}, {new_cycle=}")
-
-                for quality_marker in df_w_i.quality_marker.unique():
-                    if quality_marker != -1:
-                        # print("quality_marker",quality_marker)
-                        if quality_marker > 1:
-                            phase_before = df_w_i[df_w_i.quality_marker == (
-                                quality_marker - 1)]["cycle"].max()
-                        else:
-                            phase_before = 0
-
-                        phase_1_w = df_w_i[df_w_i.quality_marker ==
-                                           quality_marker]["cycle"].min()
-                        # print(f"{phase_1_w=}")
-
-                        quality = df_w_i[df_w_i.cycle ==
-                                         phase_1_w]["quality"][0]
-                        # print("phase end before", phase_before, "--- new phase start" ,phase_1_w - new_cycle)
-                        new_phase_beginning = max(
-                            phase_before, phase_1_w - new_cycle)
-                        # print(new_phase_beginning)
-                        # print(quality_marker, phase_1_w, new_phase_beginning)
-                        df_w_i.loc[(new_phase_beginning < df_w_i.cycle) & (
-                            df_w_i.cycle < phase_1_w), "quality"] = quality
-                        df_w_i.loc[(new_phase_beginning < df_w_i.cycle) & (
-                            df_w_i.cycle < phase_1_w), "quality_marker"] = quality_marker
-                        phase_1_w = df_w_i[df_w_i.quality_marker ==
-                                           quality_marker]["cycle"].min()
-                        # print(quality_marker, phase_1_w)
-                df_exp_i.loc[df_exp_i.welding_run == w_i, :] = df_w_i
-            df.loc[df.experiment == experiment_i, :] = df_exp_i
-        # return df[df.quality != -1]
-        return df
-    
 
 
 
 class ASIMoWDataModule(pl.LightningDataModule):
 
     def __init__(self, task: str, n_cycles: int, val_data_ids, test_data_ids, batch_size: int = 32, 
-                 model_id: int | None = None, multi_recon: bool = False, use_augmentation: bool = False, shuffle_val_test: bool = True,
+                 model_id: int | None = None, multi_recon: bool = False, shuffle_val_test: bool = True,
                  window_size: int = 200, window_offset: int = 0):
         """
         Ligning Data Module for the ASIMoW dataset
@@ -413,7 +323,6 @@ class ASIMoWDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.model_id = model_id
         self.multi_recon = multi_recon
-        self.use_augmentation = use_augmentation
         self.shuffle_val_test = shuffle_val_test
         self.window_size = window_size
         self.window_offset = window_offset
@@ -432,15 +341,9 @@ class ASIMoWDataModule(pl.LightningDataModule):
 
     def setup(self, stage: str):
         self.asimow_dataloader = ASIMoWDataLoader(task=self.task, cycle_seq_number=self.n_cycles, val_data_ids=self.val_ids, test_data_ids=self.test_ids, 
-            use_augmentation=self.use_augmentation, shuffle=self.shuffle_val_test, seed=42, window_size=self.window_size, 
-            window_offset=self.window_offset)
+            shuffle=self.shuffle_val_test, seed=42, window_size=self.window_size, window_offset=self.window_offset)
         
         train_ds, val_ds, test_ds = self.asimow_dataloader.get_dataset()
-
-        if self.multi_recon:
-            train_ds = convert_ds(train_ds)
-            val_ds = convert_ds(val_ds)
-            test_ds = convert_ds(test_ds)
 
         self.train_ds = train_ds
         self.val_ds = val_ds

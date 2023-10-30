@@ -4,14 +4,14 @@ import os
 
 import torch
 import wandb
-from data_loader.asimow_dataloader import DataSplitId
-from data_loader.latentspace_dataloader import LatentPredDataModule, get_metadata_and_artifact_dir
+from dataloader.asimow_dataloader import DataSplitId
+from dataloader.latentspace_dataloader import LatentPredDataModule, get_metadata_and_artifact_dir
+from dataloader.utils import get_val_test_ids
 
 from model.vq_vae import VectorQuantizedVAE
 from model.vq_vae_patch_embedd import VQVAEPatch
 from model.transformer_decoder import MyTransformerDecoder 
 
-from select_val_test_set import get_val_test_ids, get_out_of_dist_dataset
 
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.loggers.csv_logs import CSVLogger

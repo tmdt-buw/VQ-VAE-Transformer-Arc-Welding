@@ -3,15 +3,15 @@ import logging as log
 import os
 import torch
 import wandb
-from data_loader.asimow_dataloader import ASIMoWDataLoader, DataSplitId, ASIMoWDataModule
-from data_loader.latentspace_dataloader import LatentPredDataModule, get_metadata_and_artifact_dir
+from dataloader.asimow_dataloader import ASIMoWDataLoader, DataSplitId, ASIMoWDataModule
+from dataloader.latentspace_dataloader import LatentPredDataModule, get_metadata_and_artifact_dir
+from dataloader.utils import get_val_test_ids
 from model.mlp import MLP
 from model.mlp_embedding import MLPEmbedding
 from model.mlp_bc import MLP_BC
 from model.gru import GRU
 from model.vq_vae import VectorQuantizedVAE
 from model.vq_vae_patch_embedd import VQVAEPatch
-from select_val_test_set import get_val_test_ids, get_out_of_dist_dataset
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning import Trainer
@@ -31,9 +31,6 @@ def get_latent_dataloader(wandb_artifact_name: str, dataset_id: int, batch_size:
 
     if model_name == "VQ-VAE" or model_name == "vqvae":
         model = VectorQuantizedVAE.load_from_checkpoint(model_path)
-        latent_dim = model.embedding_dim * model.enc_out_len
-    elif model_name == "VQ-VAE2" or model_name == "vqvae2":
-        model = VectorQuantizedMultiTask.load_from_checkpoint(model_path)
         latent_dim = model.embedding_dim * model.enc_out_len
     elif model_name == "VQ-VAE-Patch":
         model = VQVAEPatch.load_from_checkpoint(model_path) 

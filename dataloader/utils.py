@@ -41,6 +41,32 @@ def write_pickle_file(df, data_path: str, file_name: str = "dump.pickle") -> Non
     log.info(f"Saved data to {data_path}/{file_name}")
 
 
+
+def get_val_test_ids():
+    return {
+        'test_ids': (
+            (3, 32),
+            (3, 18),
+            (1, 27),
+            (3, 19),
+            (3, 17),
+            (2, 21),
+            (1, 20),
+            (1, 11)
+        ),
+        'val_ids': (
+            (3, 3),
+            (2, 10),
+            (1, 24),
+            (3, 24),
+            (1, 32),
+            (2, 1),
+            (1, 10),
+            (1, 16)
+        )
+    }
+
+
 def plot_single_CV(x, y):
     fig, ax1 = plt.subplots()
     ax1.plot(x[:, 0])
