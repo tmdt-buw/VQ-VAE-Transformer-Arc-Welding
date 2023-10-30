@@ -128,6 +128,7 @@ class BaseDataloader(ABC):
         self.dataset_name = dataset_name
         self.task = task
         self.shuffle = shuffle
+        self.dataset: Dataset
         if task == "classification":
             self.Dataset = MyClassificationDataset
         elif task == "classification_ids":

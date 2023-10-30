@@ -3,6 +3,7 @@ from torch import nn
 from model.autencoder_lightning_base import Autoencoder
 from model.vector_quantizer import VectorQuantizer
 from lightning.pytorch.loggers.wandb import WandbLogger
+from lightning.pytorch.loggers.csv_logs import CSVLogger
 
 
 class PatchEmbedding(nn.Module):
@@ -116,10 +117,10 @@ class CNNBlock(nn.Module):
     
 class VQVAEPatch(Autoencoder):
     
-    def __init__(self, wandb_logger: WandbLogger, hidden_dim: int, input_dim: int, num_embeddings: int, embedding_dim: int, 
+    def __init__(self, logger: WandbLogger | CSVLogger, hidden_dim: int, input_dim: int, num_embeddings: int, embedding_dim: int, 
                  n_resblocks: int, learning_rate: float, dropout_p: float=0.1, patch_size: int=25, seq_len: int=200, beta: float=0.25):
         
-        super().__init__(wandb_logger=wandb_logger, hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings, 
+        super().__init__(logger=logger, hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings, 
                     embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, seq_len=seq_len, dropout_p=dropout_p)
         self.patch_embed = PatchEmbedding(patch_size=patch_size, embed_dim=hidden_dim)
         self.encoder = nn.Sequential(

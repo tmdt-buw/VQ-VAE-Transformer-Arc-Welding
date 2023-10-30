@@ -5,16 +5,18 @@ from model.plot_helper import plot_recon
 import lightning.pytorch as pl
 from abc import abstractmethod
 from lightning.pytorch.loggers.wandb import WandbLogger
+from lightning.pytorch.loggers.csv_logs import CSVLogger
 
 
 class Autoencoder(pl.LightningModule):
 
-    def __init__(self, wandb_logger: WandbLogger, hidden_dim: int, input_dim: int, num_embeddings: int, embedding_dim: int, 
+    def __init__(self, logger: WandbLogger | CSVLogger, hidden_dim: int, input_dim: int, num_embeddings: int, embedding_dim: int, 
                  n_resblocks: int, learning_rate: float, seq_len: int=200, dropout_p: float=0.1):
         """
         Initialize Autoencoder
         
         Args:
+            logger (WandbLogger | CSVLogger): Logger    
             input_dim (int): Input dimension
             num_embeddings (int): Number of embeddings
             embedding_dim (int): Embedding dimension
@@ -23,7 +25,7 @@ class Autoencoder(pl.LightningModule):
             dropout_p (float, optional): Dropout probability. Defaults to 0.1.
         """
         super().__init__()
-        self.wandb_logger = wandb_logger
+        self._logger = logger
         self.learning_rate = learning_rate
         self.dropout_p = dropout_p
         self.n_resblocks = n_resblocks
@@ -33,7 +35,7 @@ class Autoencoder(pl.LightningModule):
         self.input_dim = input_dim
         self.learning_rate = learning_rate
         self.seq_len = seq_len
-        self.last_recon = ()
+        self.last_recon = (0,0)
 
         # optimizer params
         self.betas = (0.9, 0.95)
@@ -119,24 +121,12 @@ class Autoencoder(pl.LightningModule):
                 'recon_error': recon_error,
                 'data_recon': data_recon}
 
-    def on_train_epoch_end(self) -> None:
-        x_batch = self.last_recon[0].squeeze(0)
-        data_recon = self.last_recon[1].squeeze(0)
-        # plot_recon(self.wandb_logger, x_batch, data_recon, title=f"Training Reconstruction")
-    
-    def on_validation_batch_end(self, outputs, batch, batch_idx) -> None:
-        if batch_idx % 50 == 0:
-            sample_idx = torch.randint(0, len(batch), (1,))
-            data_recon = outputs['data_recon'][sample_idx].squeeze(0)
-            x_batch = batch[sample_idx].squeeze(0)
-            # plot_recon(self.wandb_logger, x_batch, data_recon, title=f"Validation Reconstruction {batch_idx}")
-
     def on_test_batch_end(self, outputs, batch, batch_idx) -> None:
         if batch_idx % 10 == 0:
             sample_idx = torch.randint(0, len(batch), (1,))
             data_recon = outputs['data_recon'][sample_idx].squeeze(0)
             x_batch = batch[sample_idx].squeeze(0)
-            plot_recon(self.wandb_logger, x_batch, data_recon, title=f"Test Reconstruction {batch_idx}")  
+            plot_recon(self._logger, x_batch, data_recon, title=f"Test Reconstruction {batch_idx}")  
 
     def configure_optimizers(self):
         optimizer = torch.optim.RAdam(self.parameters(), lr=self.learning_rate)

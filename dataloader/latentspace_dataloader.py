@@ -16,12 +16,12 @@ import os
 class LatentSpaceDataLoader(BaseDataloader):
 
     def __init__(self, latent_space_model: pl.LightningModule, model_name: str, val_data_ids: list[DataSplitId], 
-                 test_data_ids: list[DataSplitId], cycle_seq_number: int, wandb_model_name: str, task: str = "classification", 
+                 test_data_ids: list[DataSplitId], cycle_seq_number: int, model_id: str, task: str = "classification", 
                  window_size: int = 50, window_offset: int = 10, shuffle_val_test: bool = True, **kwargs):
         if task == "classification" or task == "classification_ids":
-            dataset_name = f"asimow_ls_{task}_{model_name}_cycle_{cycle_seq_number}_{wandb_model_name}"
+            dataset_name = f"asimow_ls_{task}_{model_name}_cycle_{cycle_seq_number}_{model_id}"
         elif task == f"autoregressive_ids" or task == f"autoregressive_ids_classification":
-            dataset_name = f"{task}_cycle_{cycle_seq_number}_{wandb_model_name}"
+            dataset_name = f"{task}_cycle_{cycle_seq_number}_{model_id}"
         else: 
             raise ValueError(f"task {task} not supported")
         self.val_data_ids = val_data_ids
@@ -293,7 +293,7 @@ def get_metadata_and_artifact_dir(model_name: str) -> tuple[str, str]:
 
 class LatentPredDataModule(pl.LightningDataModule):
  
-    def __init__(self, latent_space_model, task: str, n_cycles: int, val_data_ids: list[DataSplitId], test_data_ids: list[DataSplitId], model_name: str, wandb_model_name: str, 
+    def __init__(self, latent_space_model, task: str, n_cycles: int, val_data_ids: list[DataSplitId], test_data_ids: list[DataSplitId], model_name: str, model_id: str, 
                  batch_size: int = 32, window_size: int = 200, window_offset: int = 0, shuffle_val_test: bool = True):
         super().__init__()
         self.n_cycles = n_cycles
@@ -304,7 +304,7 @@ class LatentPredDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.latent_space_model = latent_space_model
         self.train_sampling = None
-        self.wandb_model_name = wandb_model_name
+        self.model_id = model_id
         self.window_size = window_size
         self.window_offset = window_offset
         self.shuffle_val_test = shuffle_val_test
@@ -312,7 +312,7 @@ class LatentPredDataModule(pl.LightningDataModule):
     def setup(self, stage: str):
         self.latent_dataloader = LatentSpaceDataLoader(latent_space_model=self.latent_space_model, model_name=self.model_name, task=self.task, 
                                                  cycle_seq_number=self.n_cycles, val_data_ids=self.val_ids, test_data_ids=self.test_ids, 
-                                                 wandb_model_name=self.wandb_model_name, window_size=self.window_size, window_offset=self.window_offset)
+                                                 model_id=self.model_id, window_size=self.window_size, window_offset=self.window_offset)
         train_ds, val_ds, test_ds = self.latent_dataloader.get_dataset()
         
         self.train_ds = train_ds
