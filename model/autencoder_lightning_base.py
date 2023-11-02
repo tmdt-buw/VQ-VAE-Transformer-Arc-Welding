@@ -37,9 +37,12 @@ class Autoencoder(pl.LightningModule):
         self.seq_len = seq_len
         self.last_recon = (0,0)
 
+        self.is_wandb_logger = self._logger.__class__.__name__ == "WandbLogger"
+
         # optimizer params
         self.betas = (0.9, 0.95)
         self.weight_decay = 0.1 
+
         self.save_hyperparameters()
 
     @abstractmethod
@@ -126,7 +129,8 @@ class Autoencoder(pl.LightningModule):
             sample_idx = torch.randint(0, len(batch), (1,))
             data_recon = outputs['data_recon'][sample_idx].squeeze(0)
             x_batch = batch[sample_idx].squeeze(0)
-            plot_recon(self._logger, x_batch, data_recon, title=f"Test Reconstruction {batch_idx}")  
+            
+            plot_recon(self._logger, x_batch, data_recon, title=f"Test Reconstruction {batch_idx}", plot_wandb=self.is_wandb_logger)  
 
     def configure_optimizers(self):
         optimizer = torch.optim.RAdam(self.parameters(), lr=self.learning_rate)

@@ -54,7 +54,7 @@ class MyWandbPlotterPlotly:
         self.wandb_run.log({title: self.table})
 
 
-def plot_recon(logger, x: torch.Tensor, y: torch.Tensor, title: str):
+def plot_recon(logger, x: torch.Tensor, y: torch.Tensor, title: str, plot_wandb: bool = True):
     x = x.cpu().detach().numpy().reshape(-1, x.shape[-1])
     y = y.cpu().detach().numpy().reshape(-1, y.shape[-1])
     if x.shape[1] == 1:
@@ -65,8 +65,11 @@ def plot_recon(logger, x: torch.Tensor, y: torch.Tensor, title: str):
         ax2.plot(y, label="current")
         ax2.set_title("Prediction")
         fig.suptitle("Left is the target and on the right the prediction")
-
-        logger.log({title: fig})
+        if plot_wandb:
+            logger.log({title: fig})
+        else:
+            plt.show()
+        
     elif x.shape[1] == 2:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(4, 12))
         ax1.plot(x[:, 1], label="current")
@@ -77,7 +80,10 @@ def plot_recon(logger, x: torch.Tensor, y: torch.Tensor, title: str):
         ax2.set_title("Prediction")
         fig.suptitle("Left is the target and on the right the prediction")
 
-        logger.log({title: fig})
+        if plot_wandb:
+            logger.log({title: fig})
+        else:
+            plt.show()
     else:
         print("plotting not implemented for this shape")
     plt.close()
