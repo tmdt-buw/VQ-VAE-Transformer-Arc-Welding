@@ -25,7 +25,7 @@ class Autoencoder(pl.LightningModule):
             dropout_p (float, optional): Dropout probability. Defaults to 0.1.
         """
         super().__init__()
-        self._logger = logger
+        self._logger = logger.experiment
         self.learning_rate = learning_rate
         self.dropout_p = dropout_p
         self.n_resblocks = n_resblocks
@@ -37,7 +37,7 @@ class Autoencoder(pl.LightningModule):
         self.seq_len = seq_len
         self.last_recon = (0,0)
 
-        self.is_wandb_logger = self._logger.__class__.__name__ == "WandbLogger"
+        self.is_wandb_logger = isinstance(logger, WandbLogger)
 
         # optimizer params
         self.betas = (0.9, 0.95)

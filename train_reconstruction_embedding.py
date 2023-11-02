@@ -25,7 +25,7 @@ def print_training_input_shape(data_module):
         log.info(f"Input {i} shape: {batch[i].shape}")
     
 
-def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger: WandbLogger, val_ids: list[DataSplitId], 
+def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger: CSVLogger | WandbLogger, val_ids: list[DataSplitId], 
                           test_ids: list[DataSplitId], n_cycles: int, model_name: str, dataset: str,
                           classification_model: str, learning_rate: float, clipping_value: float):
     
@@ -54,7 +54,7 @@ def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger:
         monitor=f"val/f1_score", min_delta=0.0001, patience=10, verbose=False, mode="max")
 
     trainer = Trainer(
-        max_epochs=15,
+        max_epochs=1,
         logger=logger,
         callbacks=[checkpoint_callback, early_stop_callback],
         devices=1,
@@ -84,10 +84,16 @@ def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger:
     test_f1_score = model.test_f1_score
     test_acc = model.test_acc_score
 
-    logger.experiment.log({"val/mean_f1_score": best_score, 
+    logdict = {"val/mean_f1_score": best_score, 
                         "val/mean_acc": best_acc_score,
                         "test/mean_f1_score": test_f1_score,
-                        "test/mean_acc": test_acc})
+                        "test/mean_acc": test_acc}
+    
+    if isinstance(logger, CSVLogger):
+        logger.experiment.log_metrics(logdict)
+    else: 
+        logger.experiment.log(logdict)
+        logger.experiment.finish()
 
     # clean up dataloader folder
     log.info("Cleaning up latent dataloader folder")
@@ -154,12 +160,12 @@ def main(hparams):
 
     if model_name == "VQ-VAE":
         model = VectorQuantizedVAE(
-            logger=logger.experiment, input_dim=input_dim, hidden_dim=hidden_dim, num_embeddings=num_embeddings,
+            logger=logger, input_dim=input_dim, hidden_dim=hidden_dim, num_embeddings=num_embeddings,
             embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, decoder_type=decoder_type,  dropout_p=dropout_p
         )
     elif model_name == "VQ-VAE-Patch":
         model = VQVAEPatch(
-            logger=logger.experiment, hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings,
+            logger=logger, hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings,
             embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, dropout_p=dropout_p, patch_size=patch_size
         )
     else:
@@ -196,19 +202,19 @@ def main(hparams):
     classify_latent_space(latent_model=model, logger=logger, val_ids=val_ids, test_ids=test_ids, n_cycles=1, model_name=model_name, 
                             dataset=dataset, classification_model="MLP", learning_rate=learning_rate, clipping_value=clipping_value)
     
-    logger.experiment.finish()
+      
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train VQ-VAE')
-    parser.add_argument('--epochs', type=int, help='Number of epochs to train', default=25)
+    parser.add_argument('--epochs', type=int, help='Number of epochs to train', default=1)
     parser.add_argument('--dataset', type=str, help='Dataset', default="asimow")
     parser.add_argument('--num-embeddings', type=int, help='Number of embeddings', default=256)
     parser.add_argument('--embedding-dim', type=int, help='Dimension of one embedding', default=32)
-    parser.add_argument('--hidden-dim', type=int, help='Hidden dimension', default=512)
+    parser.add_argument('--hidden-dim', type=int, help='Hidden dimension', default=32)
     parser.add_argument('--learning-rate', type=float, help='Learning rate', default=0.001)
     parser.add_argument('--clipping-value', type=float, help='Gradient Clipping', default=0.7)
     parser.add_argument('--batch-size', type=int, help='Batch size', default=512)
-    parser.add_argument('--n-resblocks', type=int, help='Number of Residual Blocks', default=4)
+    parser.add_argument('--n-resblocks', type=int, help='Number of Residual Blocks', default=1)
     parser.add_argument('--patch-size', type=int, help='Patch size of the VQ-VAE Encoder', default=25)
     parser.add_argument('--dropout-p', type=float, help='Dropout probability', default=0.1)
     parser.add_argument('--model-name', type=str, help='Model name', default="VQ-VAE-Patch")

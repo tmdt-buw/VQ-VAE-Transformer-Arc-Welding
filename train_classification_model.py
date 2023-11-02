@@ -146,12 +146,16 @@ def main(hparams):
     test_f1_score = model.test_f1_score
     test_acc = model.test_acc_score
 
-    logger.experiment.log({"val/mean_f1_score": best_score, 
-                            "val/mean_acc": best_acc_score,
-                            "test/mean_f1_score": test_f1_score,
-                            "test/mean_acc": test_acc})
+    logdict = {"val/mean_f1_score": best_score, 
+                "val/mean_acc": best_acc_score,
+                "test/mean_f1_score": test_f1_score,
+                "test/mean_acc": test_acc}
+    if use_wandb:
+        logger.experiment.log(logdict)
+        logger.experiment.finish()
+    else: 
+        logger.experiment.log_metrics(logdict)
 
-    logger.experiment.finish()
 
 
 if __name__ == '__main__':
