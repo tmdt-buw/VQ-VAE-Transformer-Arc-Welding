@@ -39,6 +39,6 @@ def get_latent_dataloader(use_wandb: bool, n_cycles: int, model_path: str, val_i
     
     num_embeddings = model.num_embeddings
     patch_size = int(model.patch_size) if hasattr(model, "patch_size") else 25
-    latent_dim = num_embeddings * model.enc_out_len
+    latent_dim = model.embedding_dim * model.enc_out_len
     config = {"num_embeddings": num_embeddings, "patch_size": patch_size, "latent_dim": latent_dim}
     return data_module, config

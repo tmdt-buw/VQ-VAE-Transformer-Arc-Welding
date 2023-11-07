@@ -81,10 +81,10 @@ def main(hparams):
             input_dim = 200*2
         else:
             raise ValueError(f"Classification model name: {classification_model} not supported")
-    elif dataset == "latent_vq_vae" or dataset == "latent_vae" or dataset == "latent_vq_vae_out_of_dist":
-        data_module, model_conf = get_latent_dataloader(
-            vqvae_model=vqvae_model, batch_size=batch_size, val_ids=val_ids, test_ids=test_ids, 
-            n_cycles=n_cycles, use_ids=use_ids)
+    elif dataset == "latent_vq_vae" or dataset == "latent_vae":
+        data_module, model_conf = get_latent_dataloader(use_wandb=use_wandb,
+            model_path=vqvae_model, batch_size=batch_size, val_ids=val_ids, test_ids=test_ids, 
+            n_cycles=n_cycles, task="classification")
 
         seq_len = n_cycles
         input_dim = model_conf["latent_dim"] 
@@ -168,7 +168,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout-p', type=float, help='Dropout propability', default=0.15)
     parser.add_argument('--n-hidden-layer', type=int, help='Number of hidden layers', default=4)
     parser.add_argument('--model-name', type=str, help='Model name', default="MLP")
-    parser.add_argument('--dataset', type=str, help='Dataset', default="asimow")
+    parser.add_argument('--dataset', type=str, help='Dataset', default="latent_vq_vae")
     parser.add_argument('--n-cycles', type=int, help='Number of cycles', default=1)
     parser.add_argument('--use-latent-ids', type=int, help='If the dataset with latentspace IDs should be used', default=0)
 
@@ -177,7 +177,7 @@ if __name__ == '__main__':
     parser.add_argument('--wandb-entity', type=str, help='Weights and Bias entity')
     parser.add_argument('--wandb-project', type=str, help='Weights and Bias project')
 
-    parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/model-z2xyghpx.ckpt")
+    parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/VQ-VAE-Patch-asimow-best-v2.ckpt")
     args = parser.parse_args()
 
     FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
