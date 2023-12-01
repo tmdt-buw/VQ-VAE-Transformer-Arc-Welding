@@ -5,7 +5,7 @@ We recommand using the [devcontainer](.devcontainer) to run the code.
 
 Otherwise, the packages can be installed using conda and the environment [file](.devcontainer/environment.yml) with the following command:
 ```bash
-mamba env create -n vqvae-transformer python=3.11 -f .devcontainer/environment.yml
+conda env create -n vqvae-transformer python=3.11 -f .devcontainer/environment.yml
 conda activate vqvae-transformer
 
 ``` 
