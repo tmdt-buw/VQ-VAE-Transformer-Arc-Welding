@@ -28,7 +28,7 @@ python train_reconstruction_embedding.py
 
 Then the VQ-VAE-Transformer can be trained.
 ```bash
-python train_transformer_mtasks.py.py --vq-model="path to trained vq model"
+python train_transformer_mtasks.py --vqvae-model="path to trained vq model"
 ```
 
 
