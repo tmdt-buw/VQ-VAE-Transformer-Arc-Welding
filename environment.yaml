@@ -1,4 +1,4 @@
-name: asimow
+name: vq-vae
 channels:
   - conda-forge
   - defaults
@@ -11,8 +11,6 @@ dependencies:
   - pandas
   - matplotlib
   - scikit-learn
-  - dvc
-  - dvc-ssh
   - openpyxl
   - pip
   - nptdms
@@ -24,10 +22,6 @@ dependencies:
   - torchaudio 
   - lightning
   - seaborn
-  - psycopg2
   - python-dotenv
   - pip:
-      - wvfreader
-      - h5py
-      - npTDMS
       - tsaug
