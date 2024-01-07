@@ -93,10 +93,11 @@ def main(hparams):
     classification_only = hparams.classification_only
     no_early_stopping = hparams.no_early_stopping 
     use_wandb = hparams.use_wandb
+    use_wandb_for_logging = hparams.use_wandb_for_logging
     wandb_entity = hparams.wandb_entity
     wandb_project = hparams.wandb_project
 
-    if use_wandb:
+    if use_wandb or use_wandb_for_logging:
         assert wandb_entity is not None, "Wandb entity must be set"
         assert wandb_project is not None, "Wandb project must be set"
         logger = WandbLogger(log_model=True, project=wandb_project, entity=wandb_entity)
@@ -162,20 +163,21 @@ def main(hparams):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train-Latent-Transformer')
-    parser.add_argument('--epoch_iter', type=int, help='Number of epochs iterations (15 epochs autoregressive train, 2 epochs classification', default=3)
-    parser.add_argument('--dataset', type=str, help='Dataset', default="asimow")    
+    parser.add_argument('--epoch_iter', type=int, help='Number of epochs iterations (15 epochs autoregressive train, 2 epochs classification', default=15)
     parser.add_argument('--batch-size', type=int, help='Batch size', default=128)
     parser.add_argument('--n-cycles', type=int, help='Number of cycles', default=20)
     parser.add_argument('--d-model', type=int, help='Number of embeddings', default=512)
     parser.add_argument('--n-heads', type=int, help='Number of heads', default=8)
     parser.add_argument('--n-blocks', type=int, help='Number of transformer blocks', default=12)
 
-    parser.add_argument('--use-wandb', help='Use Weights and Bias (https://wandb.ai/) for Logging', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--use-wandb', help='Use Weights and Bias (https://wandb.ai/) for Logging & loading the model from wandb', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--use-wandb-for-logging', help='Use Weights and Bias (https://wandb.ai/) for Logging', action=argparse.BooleanOptionalAction)
+
     parser.add_argument('--wandb-entity', type=str, help='Weights and Bias entity')
     parser.add_argument('--wandb-project', type=str, help='Weights and Bias project')
     
     
-    parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/model-z2xyghpx.ckpt")
+    parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/vq_vae_patch-best.ckpt")
 
     parser.add_argument('--classification-only', action=argparse.BooleanOptionalAction)
     parser.add_argument('--no-early-stopping', action=argparse.BooleanOptionalAction)
