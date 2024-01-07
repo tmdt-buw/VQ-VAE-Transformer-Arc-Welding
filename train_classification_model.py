@@ -110,7 +110,7 @@ def main(hparams):
                       n_hidden_layers=n_hidden_layers, output_size=output_size, learning_rate=learning_rate)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath="checkpoints", monitor=f"val/f1_score_mean", mode="max", filename=f"{model_name}-{dataset}-best")
+        dirpath="model_checkpoints", monitor=f"val/f1_score_mean", mode="max", filename=f"{model_name}-{dataset}-best")
     early_stop_callback = EarlyStopping(
         monitor=f"val/f1_score_mean", min_delta=0.001, patience=5, verbose=False, mode="max")
 
@@ -187,3 +187,6 @@ if __name__ == '__main__':
 
     main(args)
     wandb.finish()
+
+
+# python train_transformer_mtasks.py --vqvae-model="model_checkpoints/vq_vae_patch.ckpt" --use-wandb --wandb-entity="tmdt-deep-learning" --wandb-project="asimow-predictive-quality"
