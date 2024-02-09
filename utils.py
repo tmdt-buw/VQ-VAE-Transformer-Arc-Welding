@@ -3,6 +3,7 @@ from dataloader.asimow_dataloader import DataSplitId
 from dataloader.latentspace_dataloader import LatentPredDataModule, get_metadata_and_artifact_dir
 from model.vq_vae import VectorQuantizedVAE
 from model.vq_vae_patch_embedd import VQVAEPatch
+import random
 
 
 def print_training_input_shape(data_module):
@@ -42,3 +43,23 @@ def get_latent_dataloader(use_wandb: bool, n_cycles: int, model_path: str, val_i
     latent_dim = model.embedding_dim * model.enc_out_len
     config = {"num_embeddings": num_embeddings, "patch_size": patch_size, "latent_dim": latent_dim}
     return data_module, config
+
+
+def name_generator():
+    import random
+    import string
+    return ''.join(random.choice(string.ascii_letters) for _ in range(10))
+
+
+
+def generate_funny_name():
+    adjectives = ["Crazy", "Wacky", "Silly", "Jolly", "Happy", "Dizzy", "Funky", "Cheeky"]
+    nouns = ["Banana", "Tiger", "Raccoon", "Penguin", "Potato", "Robot", "Pirate", "Ninja",
+             "Unicorn", "Dragon", "Wizard", "Alien", "Zombie", "Ghost", "Goblin", "Knight",
+             "Dinosaur", "Astronaut", "Vampire", "Werewolf", "Wizard", "Elf", "Cyborg", "Yeti"]
+
+    adjective = random.choice(adjectives)
+    noun = random.choice(nouns)
+    rand_int = random.randint(0, 1000)
+
+    return f"{adjective}-{noun}-{str(rand_int).zfill(3)}"

@@ -6,6 +6,7 @@ import torch
 import wandb
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.loggers.csv_logs import CSVLogger
+from lightning.pytorch.loggers.mlflow import MLFlowLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 import lightning.pytorch as pl
 from lightning import Trainer
@@ -14,21 +15,25 @@ from dataloader.asimow_dataloader import DataSplitId
 from dataloader.latentspace_dataloader import LatentPredDataModule, get_metadata_and_artifact_dir
 from dataloader.utils import get_val_test_ids
 from model.transformer_decoder import MyTransformerDecoder 
-from utils import get_latent_dataloader, print_training_input_shape
+from utils import get_latent_dataloader, print_training_input_shape, generate_funny_name
+from mlflow_helper import MLFlowLogger as MLFlowLoggerHelper
+from lightning.pytorch.strategies import DDPStrategy
 
 
-def get_new_trainer(epochs_steps, logger, gpus=1):
+def get_new_trainer(epochs_steps, logger, n_gpus=1):
     return Trainer(
-        devices=gpus,
+        devices=n_gpus,
         num_nodes=1,
         max_epochs=epochs_steps,
         logger=logger, 
         callbacks=[],
         gradient_clip_val=0.8,
+        strategy = DDPStrategy(find_unused_parameters=True) if n_gpus > 1 else 'auto',
+        accumulate_grad_batches=5
     )
 
 
-def load_dataset(hparams, only_classify=False) -> tuple[int, int, LatentPredDataModule, LatentPredDataModule]:
+def load_dataset(hparams, only_classify=False) -> tuple[int, int, LatentPredDataModule, LatentPredDataModule | None]:
     batch_size = hparams.batch_size
     n_cycles = hparams.n_cycles
     use_wandb = hparams.use_wandb
@@ -60,27 +65,35 @@ def load_dataset(hparams, only_classify=False) -> tuple[int, int, LatentPredData
     return num_embeddings, patch_size, class_task_data_module, gen_task_data_module
 
 
-def classification_finetuning(model, classification_epoch, logger, class_task_data_module, no_early_stopping=False):
-    checkpoint_callback = ModelCheckpoint(dirpath='model_checkpoints/VQ-VAE-transformer/', monitor="val/cl/loss", mode="min")
-    early_stop_callback = EarlyStopping(monitor="val/cl/loss", min_delta=0.001, patience=10, verbose=False, mode="min")
+def classification_finetuning(model, classification_epoch, logger, class_task_data_module, no_early_stopping=False, n_gpus=1):
+    score = "val/cl/f1_score"
+    mode = "max"
+    # checkpoint_callback = ModelCheckpoint(dirpath='model_checkpoints/VQ-VAE-transformer/', monitor=score, mode=mode, save_last=True)
+    early_stop_callback = EarlyStopping(monitor=score, min_delta=0.001, patience=5, verbose=False, mode=mode)
     model.switch_to_classification()
-    
 
     if no_early_stopping:
-        early_stop_callbacks = []
+        callbacks = []
     else:
-        early_stop_callbacks = [checkpoint_callback, early_stop_callback]
+        callbacks = early_stop_callback
 
     trainer = Trainer(
-        devices=1,
+        devices=n_gpus,
         num_nodes=1,
         max_epochs=classification_epoch,
         logger=logger, 
-        callbacks=early_stop_callbacks,
+        callbacks=callbacks,
         gradient_clip_val=0.8,
+        strategy = DDPStrategy(find_unused_parameters=True) if n_gpus > 1 else 'auto',
+        accumulate_grad_batches=5
     )
     trainer.fit(model, class_task_data_module)
-
+    trainer = Trainer(
+        devices=1,
+        num_nodes=1,
+        logger=logger, 
+        callbacks=callbacks,
+    )
     trainer.test(model, class_task_data_module)
 
 def main(hparams):
@@ -94,13 +107,33 @@ def main(hparams):
     no_early_stopping = hparams.no_early_stopping 
     use_wandb = hparams.use_wandb
     use_wandb_for_logging = hparams.use_wandb_for_logging
-    wandb_entity = hparams.wandb_entity
-    wandb_project = hparams.wandb_project
+    epoch_iter = hparams.epoch_iter
+    use_class_head_bias = hparams.use_class_head_bias
+    use_class_head_dropout = hparams.use_class_head_dropout
+
+    logging_entity = hparams.logging_entity
+    logging_project = hparams.logging_project
+
+    use_mlflow = hparams.use_mlflow
+    mlflow_url = hparams.mlflow_url 
+
+    use_all_gpus = hparams.use_all_gpus
 
     if use_wandb or use_wandb_for_logging:
-        assert wandb_entity is not None, "Wandb entity must be set"
-        assert wandb_project is not None, "Wandb project must be set"
-        logger = WandbLogger(log_model=True, project=wandb_project, entity=wandb_entity)
+        assert logging_entity is not None, "Wandb entity must be set"
+        assert logging_project is not None, "Wandb project must be set"
+        logger = WandbLogger(log_model=True, project=logging_project, entity=logging_entity)
+    elif use_mlflow:
+        assert logging_project is not None, "MLflow project must be set"
+        assert mlflow_url is not None, "MLflow URL must be set"
+        mlflow_helper = MLFlowLoggerHelper()
+        logger = MLFlowLogger(experiment_name=logging_project, run_name=f"{generate_funny_name()}", tracking_uri=mlflow_url, log_model=True)
+        print("MLflow logger created")
+        print(f"MLflow ID: {logger.run_id}")
+        print(f"MLflow URL: {mlflow_url}")
+        print(f"MLflow experiment name: {logging_project}")
+        logger.log_hyperparams(hparams)
+
     else:
         logger = CSVLogger("logs", name="vq-vae-transformer")
 
@@ -111,7 +144,13 @@ def main(hparams):
 
     seq_len = (n_cycles * (400 // patch_size)) + 1
     num_classes = num_embeddings + 2
-    
+
+
+    if use_all_gpus:
+        n_gpus = torch.cuda.device_count()
+    else:
+        n_gpus = 1
+    log.info(f"{n_gpus=}")
     log.info(f"{seq_len=} - {num_classes=} - {num_embeddings=} - {patch_size=}")
 
     if classification_only:
@@ -119,7 +158,8 @@ def main(hparams):
 
         if model_name == "":
             model = MyTransformerDecoder(
-                d_model=d_model, seq_len=seq_len, n_classes=num_classes, n_head=n_heads, n_blocks=n_blocks)
+                d_model=d_model, seq_len=seq_len, n_classes=num_classes, n_head=n_heads, n_blocks=n_blocks, class_h_bias=use_class_head_bias, class_h_dropout=use_class_head_dropout)
+            
         else:
             artifact_dir = f"./artifacts/{model_name.split('/')[-1]}"
             artifact = wandb.use_artifact(model_name, type='model')
@@ -135,55 +175,68 @@ def main(hparams):
         model = MyTransformerDecoder(
             d_model=d_model, seq_len=seq_len, n_classes=num_classes, n_head=n_heads, n_blocks=n_blocks)
 
-        epoch_iter = 3
         for epoch in range(epoch_iter):
             log.info("Genrerating stage")
-            trainer = get_new_trainer(epochs_steps=10, logger=logger)
+            trainer = get_new_trainer(epochs_steps=10, logger=logger, n_gpus=n_gpus)
             model.switch_to_generate()
             trainer.fit(model, gen_task_data_module)
 
             if epoch == epoch_iter - 1:
-                classification_finetuning(model, fine_tune_epochs, logger, class_task_data_module, no_early_stopping=no_early_stopping)
+                classification_finetuning(model, fine_tune_epochs, logger, class_task_data_module, no_early_stopping=no_early_stopping, n_gpus=n_gpus)
             else:
-                trainer = get_new_trainer(epochs_steps=classification_epoch, logger=logger)
+                trainer = get_new_trainer(epochs_steps=classification_epoch, logger=logger, n_gpus=n_gpus)
                 log.info("Classification stage")
                 model.switch_to_classification()
                 trainer.fit(model, class_task_data_module)
 
-        trainer = get_new_trainer(epochs_steps=1, logger=logger, gpus=1)
+        trainer = get_new_trainer(epochs_steps=1, logger=logger, n_gpus=1)
         model.switch_to_classification()
         trainer.test(model, class_task_data_module)
 
         model.switch_to_generate()
         trainer.test(model, gen_task_data_module)
 
-    logger.experiment.finish()
+    if isinstance(logger, CSVLogger):
+        pass
+    elif isinstance(logger, WandbLogger):
+        logger.experiment.finish()
+    elif isinstance(logger, MLFlowLogger):
+        logger.finalize()
+    else: 
+        raise ValueError("Invalid logger")
+    print("Done")
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train-Latent-Transformer')
-    parser.add_argument('--epoch_iter', type=int, help='Number of epochs iterations (15 epochs autoregressive train, 2 epochs classification', default=15)
-    parser.add_argument('--batch-size', type=int, help='Batch size', default=128)
+    parser.add_argument('--epoch_iter', type=int, help='Number of epochs iterations (15 epochs autoregressive train, 2 epochs classification', default=3)
+    parser.add_argument('--batch-size', type=int, help='Batch size', default=16)
     parser.add_argument('--n-cycles', type=int, help='Number of cycles', default=20)
     parser.add_argument('--d-model', type=int, help='Number of embeddings', default=512)
     parser.add_argument('--n-heads', type=int, help='Number of heads', default=8)
-    parser.add_argument('--n-blocks', type=int, help='Number of transformer blocks', default=12)
+    parser.add_argument('--n-blocks', type=int, help='Number of transformer blocks', default=6)
+    parser.add_argument('--use-class-head-bias', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--use-class-head-dropout', action=argparse.BooleanOptionalAction)
 
     parser.add_argument('--use-wandb', help='Use Weights and Bias (https://wandb.ai/) for Logging & loading the model from wandb', action=argparse.BooleanOptionalAction)
     parser.add_argument('--use-wandb-for-logging', help='Use Weights and Bias (https://wandb.ai/) for Logging', action=argparse.BooleanOptionalAction)
+    
+    parser.add_argument('--use-mlflow', help='Use MLflow (https://mlflow.org/docs/latest/index.html) for Logging', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--mlflow-url', type=str, help='URL of the MLflow server', default='http://mlflow.tmdt.uni-wuppertal.de/')
 
-    parser.add_argument('--wandb-entity', type=str, help='Weights and Bias entity')
-    parser.add_argument('--wandb-project', type=str, help='Weights and Bias project')
+    parser.add_argument('--logging-entity', type=str, help='Weights and Bias or MLflow entity')
+    parser.add_argument('--logging-project', type=str, help='Weights and Bias or MLflow project', default="asimow-vq-vae-transformer")  
     
-    
-    parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/vq_vae_patch-best.ckpt")
+    parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/vq_vae_patch_best_01.ckpt")
 
     parser.add_argument('--classification-only', action=argparse.BooleanOptionalAction)
     parser.add_argument('--no-early-stopping', action=argparse.BooleanOptionalAction)
     parser.add_argument('--class-epoch', type=int, help='Number of epochs for classification', default=2)
-    parser.add_argument('--finetune-epochs', type=int, help='Number of epochs for classification', default=25)
+    parser.add_argument('--finetune-epochs', type=int, help='Number of epochs for classification', default=10)
     parser.add_argument('--model-wandb-transformer', type=str, help='Transfomrer Model for classification', default="")
+    parser.add_argument('--use-all-gpus', action=argparse.BooleanOptionalAction)
+
     args = parser.parse_args()
 
     FORMAT = '%(asctime)s - %(levelname)s - %(message)s'

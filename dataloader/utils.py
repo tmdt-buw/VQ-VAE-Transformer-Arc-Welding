@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 from sklearn.preprocessing import StandardScaler
 import logging as log
 import numpy as np
+from dotenv import dotenv_values
 
 
 def shuffle_np(x, y):
@@ -106,4 +107,13 @@ def select_random_val_test_ids():
     return good_val_id, bad_val_id, good_test_id, bad_test_id
 
 def get_data_path():
-    return "data"
+
+    config = dotenv_values(".env")
+    # print(config)
+    if config.get("PLEIADES", False):
+        if os.environ.get('SLURM_JOB_ID') is not None:
+            return f"/tmp/hahn_{os.environ['SLURM_JOB_ID']}/"
+        else:
+            return "/tmp/hahn/"
+    else:
+        return "data"

@@ -1,16 +1,13 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from model.plot_helper import plot_recon
 import lightning.pytorch as pl
 from abc import abstractmethod
-from lightning.pytorch.loggers.wandb import WandbLogger
-from lightning.pytorch.loggers.csv_logs import CSVLogger
 
 
 class Autoencoder(pl.LightningModule):
 
-    def __init__(self, logger: WandbLogger | CSVLogger, hidden_dim: int, input_dim: int, num_embeddings: int, embedding_dim: int, 
+    def __init__(self, hidden_dim: int, input_dim: int, num_embeddings: int, embedding_dim: int, 
                  n_resblocks: int, learning_rate: float, seq_len: int=200, dropout_p: float=0.1):
         """
         Initialize Autoencoder
@@ -25,7 +22,7 @@ class Autoencoder(pl.LightningModule):
             dropout_p (float, optional): Dropout probability. Defaults to 0.1.
         """
         super().__init__()
-        self._logger = logger.experiment
+
         self.learning_rate = learning_rate
         self.dropout_p = dropout_p
         self.n_resblocks = n_resblocks
@@ -36,8 +33,6 @@ class Autoencoder(pl.LightningModule):
         self.learning_rate = learning_rate
         self.seq_len = seq_len
         self.last_recon = (0,0)
-
-        self.is_wandb_logger = isinstance(logger, WandbLogger)
 
         # optimizer params
         self.betas = (0.9, 0.95)
@@ -123,14 +118,6 @@ class Autoencoder(pl.LightningModule):
         return {'loss': loss,
                 'recon_error': recon_error,
                 'data_recon': data_recon}
-
-    def on_test_batch_end(self, outputs, batch, batch_idx) -> None:
-        if batch_idx % 10 == 0:
-            sample_idx = torch.randint(0, len(batch), (1,))
-            data_recon = outputs['data_recon'][sample_idx].squeeze(0)
-            x_batch = batch[sample_idx].squeeze(0)
-            
-            plot_recon(self._logger, x_batch, data_recon, title=f"Test Reconstruction {batch_idx}", plot_wandb=self.is_wandb_logger)  
 
     def configure_optimizers(self):
         optimizer = torch.optim.RAdam(self.parameters(), lr=self.learning_rate)

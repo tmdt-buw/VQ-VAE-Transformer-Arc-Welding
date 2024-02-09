@@ -10,11 +10,14 @@ from model.vq_vae import VectorQuantizedVAE
 from model.vq_vae_patch_embedd import VQVAEPatch
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.loggers.csv_logs import CSVLogger
+from lightning.pytorch.loggers.mlflow import MLFlowLogger
+
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning import Trainer
 from model.mlp import MLP
 from model.gru import GRU
-from model.classification_model import ClassificationLightningModule
+from utils import generate_funny_name
+from mlflow_helper import MLFlowLogger as MLFlowLoggerHelper
 
 
 def print_training_input_shape(data_module):
@@ -25,17 +28,18 @@ def print_training_input_shape(data_module):
         log.info(f"Input {i} shape: {batch[i].shape}")
     
 
-def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger: CSVLogger | WandbLogger, val_ids: list[DataSplitId], 
+def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger: CSVLogger | WandbLogger | MLFlowLogger, val_ids: list[DataSplitId], 
                           test_ids: list[DataSplitId], n_cycles: int, model_name: str, dataset: str,
                           classification_model: str, learning_rate: float, clipping_value: float):
     
     data_module = LatentPredDataModule(latent_space_model=latent_model, model_name=f"{model_name}", val_data_ids=val_ids, test_data_ids=test_ids,
                                     n_cycles=n_cycles, task='classification', batch_size=128, model_id=f"{model_name}-{dataset}")	
+    
     print_training_input_shape(data_module)
 
     seq_len = n_cycles
     input_dim = int(latent_model.embedding_dim * latent_model.enc_out_len)
-
+ 
     Model: type[MLP] | type[GRU]
     if classification_model == "MLP":
         Model = MLP
@@ -84,16 +88,23 @@ def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger:
     test_f1_score = model.test_f1_score
     test_acc = model.test_acc_score
 
-    logdict = {"val/mean_f1_score": best_score, 
-                        "val/mean_acc": best_acc_score,
-                        "test/mean_f1_score": test_f1_score,
-                        "test/mean_acc": test_acc}
+    logdict = {
+        "val/mean_f1_score": best_score, 
+        "val/mean_acc": best_acc_score,
+        "test/mean_f1_score": test_f1_score,
+        "test/mean_acc": test_acc
+    }
     
     if isinstance(logger, CSVLogger):
         logger.experiment.log_metrics(logdict)
-    else: 
+    elif isinstance(logger, WandbLogger):
         logger.experiment.log(logdict)
         logger.experiment.finish()
+    elif isinstance(logger, MLFlowLogger):
+        logger.log_metrics(metrics=logdict) # type: ignore
+        logger.finalize()
+    else: 
+        raise ValueError("Invalid logger")
 
     # clean up dataloader folder
     log.info("Cleaning up latent dataloader folder")
@@ -114,67 +125,75 @@ def main(hparams):
     num_embeddings = hparams.num_embeddings
     embedding_dim = hparams.embedding_dim
     n_resblocks = hparams.n_resblocks
-    dataset = hparams.dataset
     model_name = hparams.model_name
     decoder_type = hparams.decoder_type
     patch_size = hparams.patch_size
+    batch_norm = bool(hparams.batchnorm)
+    use_improved_vq = hparams.use_improved_vq
+    kmeans_iters = hparams.kmeans_iters
+    threshold_ema_dead_code = hparams.threshold_ema_dead_code 
 
     use_wandb = hparams.use_wandb
-    wandb_entity = hparams.wandb_entity
-    wandb_project = hparams.wandb_project
+    logging_entity = hparams.logging_entity
+    logging_project = hparams.logging_project
+
+    use_mlflow = hparams.use_mlflow
+    mlflow_url = hparams.mlflow_url 
 
     if use_wandb:
-        assert wandb_entity is not None, "Wandb entity must be set"
-        assert wandb_project is not None, "Wandb project must be set"
-        logger = WandbLogger(log_model=True, project=wandb_project, entity=wandb_entity)
+        assert logging_entity is not None, "Wandb entity must be set"
+        assert logging_project is not None, "Wandb project must be set"
+        logger = WandbLogger(log_model=True, project=logging_project, entity=logging_entity)
+
+    elif use_mlflow:
+        assert logging_project is not None, "MLflow project must be set"
+        assert mlflow_url is not None, "MLflow URL must be set"
+        mlflow_helper = MLFlowLoggerHelper()
+        logger = MLFlowLogger(experiment_name=logging_project, run_name=f"{generate_funny_name()}", tracking_uri=mlflow_url, log_model=True)
+
     else:
         logger = CSVLogger("logs", name="vq-vae-transformer")
-
-
-    data_dict = get_val_test_ids()
-    input_dim = 2 if dataset == "asimow" else 1
-
 
     # load data
     dataset_dict = get_val_test_ids()
 
-
     val_ids = dataset_dict["val_ids"]
     test_ids = dataset_dict["test_ids"]
-    logger.log_hyperparams({"val_ids": str(val_ids), "test_ids": str(test_ids), "dataset-name": dataset, "model_name": model_name})
-    val_ids = dataset_dict['val_ids']
-    test_ids = dataset_dict['test_ids']
+    logger.log_hyperparams({"val_ids": str(val_ids), "test_ids": str(test_ids), "model_name": model_name, "clipping_value": clipping_value})
+
+
     log.info(f"Val ids: {val_ids}")
     log.info(f"Test ids: {test_ids}")
 
-    if dataset == "asimow":
-        val_ids = [DataSplitId(experiment=e, welding_run=w) for e, w in val_ids]
-        test_ids = [DataSplitId(experiment=e, welding_run=w) for e, w in test_ids]
-        data_module = ASIMoWDataModule(task="reconstruction", batch_size=batch_size, n_cycles=1, val_data_ids=val_ids, test_data_ids=test_ids)
-        input_dim = 2
-    else:
-        raise ValueError(f"Invalid dataset name: {dataset}")
+
+    val_ids = [DataSplitId(experiment=e, welding_run=w) for e, w in val_ids]
+    test_ids = [DataSplitId(experiment=e, welding_run=w) for e, w in test_ids]
+    data_module = ASIMoWDataModule(task="reconstruction", batch_size=batch_size, n_cycles=1, val_data_ids=val_ids, test_data_ids=test_ids)
+    input_dim = 2
+
     data_module.setup(stage="fit")
     train_loader_size = len(data_module.train_ds)
     log.info(f"Loaded Data - Train dataset size: {train_loader_size}")
 
     if model_name == "VQ-VAE":
         model = VectorQuantizedVAE(
-            logger=logger, input_dim=input_dim, hidden_dim=hidden_dim, num_embeddings=num_embeddings,
+            input_dim=input_dim, hidden_dim=hidden_dim, num_embeddings=num_embeddings,
             embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, decoder_type=decoder_type,  dropout_p=dropout_p
         )
     elif model_name == "VQ-VAE-Patch":
         model = VQVAEPatch(
-            logger=logger, hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings,
-            embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, dropout_p=dropout_p, patch_size=patch_size
+            hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, dropout_p=dropout_p, patch_size=patch_size, batch_norm=batch_norm,
+            use_improved_vq=use_improved_vq, kmeans_iters=kmeans_iters, threshold_ema_dead_code=threshold_ema_dead_code
+
         )
     else:
         raise ValueError("Invalid model name")
     
     
-    model_checkpoint_name = f"{model_name}-{dataset}-best"
-    checkpoint_callback = ModelCheckpoint(dirpath=f"model_checkpoints/{model_name}/", monitor="val/loss", mode="min", filename=model_checkpoint_name)
-    early_stop_callback = EarlyStopping(monitor="val/loss", min_delta=0.0001, patience=10, verbose=False, mode="min")
+    model_checkpoint_name = f"{model_name}-best"
+    checkpoint_callback = ModelCheckpoint(dirpath=f"model_checkpoints/{model_name}/", monitor="val/loss", mode="min", filename=model_checkpoint_name, save_last=True)
+    early_stop_callback = EarlyStopping(monitor="val/loss", min_delta=0.0001, patience=5, verbose=False, mode="min")
     
     trainer = Trainer(
         devices=1,
@@ -199,30 +218,40 @@ def main(hparams):
 
     trainer.test(model=model, datamodule=data_module)
     
-    classify_latent_space(latent_model=model, logger=logger, val_ids=val_ids, test_ids=test_ids, n_cycles=1, model_name=model_name, 
-                            dataset=dataset, classification_model="MLP", learning_rate=learning_rate, clipping_value=clipping_value)
+    # classify_latent_space(latent_model=model, logger=logger, val_ids=val_ids, test_ids=test_ids, n_cycles=1, model_name=model_name, 
+    #                         dataset="asimow", classification_model="MLP", learning_rate=learning_rate, clipping_value=clipping_value)
     
       
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train VQ-VAE')
     parser.add_argument('--epochs', type=int, help='Number of epochs to train', default=50)
-    parser.add_argument('--dataset', type=str, help='Dataset', default="asimow")
-    parser.add_argument('--num-embeddings', type=int, help='Number of embeddings', default=512)
+    parser.add_argument('--batch-size', type=int, help='Batch size', default=1024)
+    parser.add_argument('--num-embeddings', type=int, help='Number of embeddings', default=256)
     parser.add_argument('--embedding-dim', type=int, help='Dimension of one embedding', default=32)
-    parser.add_argument('--hidden-dim', type=int, help='Hidden dimension', default=768)
+    parser.add_argument('--hidden-dim', type=int, help='Hidden dimension', default=512)
     parser.add_argument('--learning-rate', type=float, help='Learning rate', default=0.001)
     parser.add_argument('--clipping-value', type=float, help='Gradient Clipping', default=0.7)
-    parser.add_argument('--batch-size', type=int, help='Batch size', default=512)
-    parser.add_argument('--n-resblocks', type=int, help='Number of Residual Blocks', default=12)
+    parser.add_argument('--n-resblocks', type=int, help='Number of Residual Blocks', default=8)
     parser.add_argument('--patch-size', type=int, help='Patch size of the VQ-VAE Encoder', default=25)
     parser.add_argument('--dropout-p', type=float, help='Dropout probability', default=0.1)
+    parser.add_argument('--batchnorm', type=int, help='Use the batch normalization layers', default=0)
+
+    parser.add_argument('--use-improved-vq', help='Use the improved VQ mechanism', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--kmeans-iters', type=int, help='Number of K-Means iterations', default=10)
+    parser.add_argument('--threshold-ema-dead-code', type=int, help='Threshold for EMA dead code', default=2)
+
+
     parser.add_argument('--model-name', type=str, help='Model name', default="VQ-VAE-Patch")
     parser.add_argument('--decoder-type', type=str, help='VQ-VAE Decoder Type', default="Conv")
 
     parser.add_argument('--use-wandb', help='Use Weights and Bias (https://wandb.ai/) for Logging', action=argparse.BooleanOptionalAction)
-    parser.add_argument('--wandb-entity', type=str, help='Weights and Bias entity')
-    parser.add_argument('--wandb-project', type=str, help='Weights and Bias project')
+    parser.add_argument('--use-mlflow', help='Use MLflow (https://mlflow.org/docs/latest/index.html) for Logging', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--mlflow-url', type=str, help='URL of the MLflow server', default='http://mlflow.tmdt.uni-wuppertal.de/')
+
+
+    parser.add_argument('--logging-entity', type=str, help='Weights and Bias or MLflow entity')
+    parser.add_argument('--logging-project', type=str, help='Weights and Bias or MLflow project', default="asimow-vq-vae")
 
     args = parser.parse_args()
 

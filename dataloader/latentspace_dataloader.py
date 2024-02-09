@@ -47,7 +47,7 @@ class LatentSpaceDataLoader(BaseDataloader):
                                              task=task_latent, cycle_seq_number=self.cycle_seq_number, batch_size=batch_size, 
                                              num_workers=1, seed=42, shuffle=False, undersample=False, window_size=self.window_size, window_offset=self.window_offset)
         train_loader, val_loader, test_loader = asimow_dataloader.get_data_loader(
-            batch_size=batch_size, num_workers=1, pin_memory=False)
+            batch_size=batch_size, num_workers=4, pin_memory=False)
         return train_loader, val_loader, test_loader
     
     def get_dataset(self):

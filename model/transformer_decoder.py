@@ -12,7 +12,7 @@ from model.transformer_block import Block
 
 class MyTransformerDecoder(pl.LightningModule):
 
-    def __init__(self, d_model: int = 64, n_classes: int = 131, seq_len: int = 100, n_blocks: int = 2, n_head: int = 6, res_dropout=0.1, att_dropout=0.0, learning_rate: float = 1e-3):
+    def __init__(self, d_model: int = 64, n_classes: int = 131, seq_len: int = 100, n_blocks: int = 2, n_head: int = 6, res_dropout=0.1, att_dropout=0.0, learning_rate: float = 1e-3, class_h_bias: bool = False, class_h_dropout: bool = False):
         super().__init__()
         self.task = "generate"
         self.learning_rate = learning_rate
@@ -20,7 +20,7 @@ class MyTransformerDecoder(pl.LightningModule):
         self.weight_decay = 0.1 
         self.seq_len = seq_len
         self.embedding = LatentEmbedding(
-            input_size=n_classes, d_model=d_model, seq_len=seq_len)
+            input_size=n_classes, d_model=d_model, seq_len=512)
 
         self.transformer = nn.ModuleDict(dict(
             drop=nn.Dropout(res_dropout),
@@ -29,11 +29,16 @@ class MyTransformerDecoder(pl.LightningModule):
             ln_f=nn.LayerNorm(d_model),
         ))
         self.lm_head = nn.Linear(d_model, n_classes, bias=False)
-        self.class_head = nn.ModuleDict(dict(
-            linear_1=nn.Linear(d_model, 1),
+
+        class_head_module_dict = dict(
+            linear_1=nn.Linear(d_model, 1, bias=class_h_bias),
             activation=nn.GELU(),
-            linear_2=nn.Linear(seq_len, 2, bias=False)
-        ))
+            linear_2=nn.Linear(seq_len, 2, bias=class_h_bias)
+        )
+        if class_h_dropout:
+            class_head_module_dict['dropout'] = nn.Dropout(p=0.1)
+
+        self.class_head = nn.ModuleDict(class_head_module_dict)
         # initialize weights
         self.apply(self._init_weights)
         for pn, p in self.named_parameters():
@@ -101,8 +106,11 @@ class MyTransformerDecoder(pl.LightningModule):
             {"params": [param_dict[pn]
                         for pn in sorted(list(no_decay))], "weight_decay": 0.0},
         ]
-        optimizer = torch.optim.AdamW(
+        # optimizer = torch.optim.AdamW(
+        #     optim_groups, lr=self.learning_rate, betas=self.betas)
+        optimizer = torch.optim.RAdam(
             optim_groups, lr=self.learning_rate, betas=self.betas)
+        
         return optimizer
 
     def forward(self, x, generate: bool = True):
@@ -155,7 +163,7 @@ class MyTransformerDecoder(pl.LightningModule):
         on_epoch = ds_type == "val" or ds_type == "test" 
 
         self.log(f'{ds_type}/cl/loss', loss.item(), sync_dist=sync_dist, on_epoch=on_epoch)
-        self.log(f'{ds_type}/cl/acc', acc.item(), prog_bar=True, sync_dist=sync_dist, on_epoch=on_epoch)
+        self.log(f'{ds_type}/cl/acc', acc.item(), prog_bar=False, sync_dist=sync_dist, on_epoch=on_epoch)
         self.log(f'{ds_type}/cl/f1_score', f1score.item(), prog_bar=True, sync_dist=sync_dist, on_epoch=on_epoch)
 
     def training_step(self, batch, batch_idx):
@@ -175,7 +183,7 @@ class MyTransformerDecoder(pl.LightningModule):
         """
         loss, logits, labels = self._step(batch)
         if self.task == "generate":
-            self.log(f'val/loss', loss.item(), prog_bar=True)
+            self.log(f'val/loss', loss.item(), prog_bar=True, sync_dist=True)
         else:
             self.log_classification_results(loss, logits, labels, "val")
         return loss

@@ -372,10 +372,10 @@ def eval_classification(model, train_data, train_labels, val_data, val_labels, t
         y_val_score = clf.predict_proba(val_repr)
         y_val_score = np.argmax(y_val_score, axis=1)
     else:
-        y_test_score = clf.decision_function(test_repr)
-        y_test_score = np.argmax(y_test_score, axis=1)
-        y_val_score = clf.decision_function(val_repr)
-        y_val_score = np.argmax(y_val_score, axis=1)
+
+        y_test_score = clf.predict(test_repr)
+        y_val_score = clf.predict(val_repr)
+
 
     test_labels_onehot = label_binarize(test_labels, classes=np.arange(train_labels.max()+1))
     val_labels_onehot = label_binarize(val_labels, classes=np.arange(train_labels.max()+1))

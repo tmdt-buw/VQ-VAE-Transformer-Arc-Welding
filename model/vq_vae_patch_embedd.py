@@ -1,9 +1,7 @@
 import torch
 from torch import nn
 from model.autencoder_lightning_base import Autoencoder
-from model.vector_quantizer import VectorQuantizer
-from lightning.pytorch.loggers.wandb import WandbLogger
-from lightning.pytorch.loggers.csv_logs import CSVLogger
+from model.vector_quantizer import VectorQuantizer, ResidualVQLightning
 
 
 class PatchEmbedding(nn.Module):
@@ -89,7 +87,8 @@ class SepCNNBlock(nn.Module):
             x_t = self.shared_conv(x[:,:,i].unsqueeze(2)) 
             cnn_out.append(x_t)
         x = torch.cat(cnn_out, dim=2)
-        return x
+
+        return x.permute(0, 2, 1)
 
 class CNNBlock(nn.Module):
     def __init__(self, embed_dim: int, seperate: bool = True, kernel_size: int = 3, stride: int = 1, padding: int = 1, dropout_p: float = 0.1, batch_norm: bool = True, n_resblocks : int = 1):
@@ -117,23 +116,32 @@ class CNNBlock(nn.Module):
     
 class VQVAEPatch(Autoencoder):
     
-    def __init__(self, logger: WandbLogger | CSVLogger, hidden_dim: int, input_dim: int, num_embeddings: int, embedding_dim: int, 
-                 n_resblocks: int, learning_rate: float, dropout_p: float=0.1, patch_size: int=25, seq_len: int=200, beta: float=0.25):
+    def __init__(self, hidden_dim: int, input_dim: int, num_embeddings: int, embedding_dim: int, 
+                 n_resblocks: int, learning_rate: float, dropout_p: float=0.1, patch_size: int=25, seq_len: int=200, batch_norm: bool = True, beta: float=0.25, 
+                 use_improved_vq: bool = False, kmeans_iters: int = 0, threshold_ema_dead_code: int = 2):
         
-        super().__init__(logger=logger, hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings, 
+        super().__init__(hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings, 
                     embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, seq_len=seq_len, dropout_p=dropout_p)
         self.patch_embed = PatchEmbedding(patch_size=patch_size, embed_dim=hidden_dim)
         self.encoder = nn.Sequential(
-            CNNBlock(embed_dim=hidden_dim, n_resblocks=n_resblocks, dropout_p=dropout_p),
+            CNNBlock(embed_dim=hidden_dim, n_resblocks=n_resblocks, dropout_p=dropout_p, batch_norm=batch_norm),
             SepCNNBlock(hidden_dim=hidden_dim, embedding_dim=embedding_dim)
         
         )
-        
-        self.vector_quantization = VectorQuantizer(n_e=num_embeddings, e_dim=embedding_dim, beta=beta)
+
+        if use_improved_vq:
+            self.vector_quantization = ResidualVQLightning(
+                num_quantizers=1, e_dim=embedding_dim, n_e=num_embeddings,
+                kmeans_init=True, kmeans_iters=kmeans_iters, threshold_ema_dead_code=threshold_ema_dead_code
+
+            )
+        else:
+            self.vector_quantization = VectorQuantizer(n_e=num_embeddings, e_dim=embedding_dim, beta=beta)
+
 
         self.decoder =  nn.Sequential(
             nn.Conv1d(embedding_dim, hidden_dim, kernel_size=1, stride=1, padding=0),
-            CNNBlock(embed_dim=hidden_dim, seperate=False, n_resblocks=n_resblocks, dropout_p=dropout_p)
+            CNNBlock(embed_dim=hidden_dim, seperate=False, n_resblocks=n_resblocks, dropout_p=dropout_p, batch_norm=batch_norm)
         )
         
         self.reverse_patch_embed = PatchEmbeddingInverse(patch_size=patch_size, embed_dim=hidden_dim, input_dim=input_dim)
@@ -153,7 +161,7 @@ class VQVAEPatch(Autoencoder):
         embedding_loss, z_q, perplexity, _, _ = self.vector_quantization(z_e)
         # print("z_q", z_q.shape)
         
-        x_hat = self.decoder(z_q)
+        x_hat = self.decoder(z_q.permute(0, 2, 1))
         x_hat = self.reverse_patch_embed(x_hat)
        
         return embedding_loss, x_hat, perplexity

@@ -162,3 +162,6 @@ cython_debug/
 wandb/
 model_checkpoints/
 logs/
+data/*
+checkpoints
+mlruns

@@ -366,7 +366,7 @@ class ASIMoWDataModule(pl.LightningDataModule):
 
 
 
-def load_npy_data(config: argparse.Namespace, val_ids: list[DataSplitId], test_ids: list[DataSplitId], task: str = "classification") -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_npy_data(config: argparse.Namespace, val_ids: list[DataSplitId], test_ids: list[DataSplitId], task: str = "classification") -> tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray | None, np.ndarray, np.ndarray | None]:
     """
     Load numpy data from ASIMoW dataset
     First Load the data from the ASIMoW dataloader and convert it back to numpy array
@@ -385,7 +385,7 @@ def load_npy_data(config: argparse.Namespace, val_ids: list[DataSplitId], test_i
 
 
     data_module = ASIMoWDataModule(task=task, batch_size=config.batch_size, n_cycles=config.n_cycles,
-                                   model_id=0, val_data_ids=val_ids, test_data_ids=test_ids)
+                                   val_data_ids=val_ids, test_data_ids=test_ids)
 
     data_module.setup('fit')
 
@@ -397,8 +397,13 @@ def load_npy_data(config: argparse.Namespace, val_ids: list[DataSplitId], test_i
     val_data = val_loader.dataset.data
     test_data = test_loader.dataset.data
 
-    train_labels = train_loader.dataset.labels
-    val_labels = val_loader.dataset.labels
-    test_labels = test_loader.dataset.labels
+    if task == "classification":
+        train_labels = train_loader.dataset.labels
+        val_labels = val_loader.dataset.labels
+        test_labels = test_loader.dataset.labels
+    else:
+        train_labels = None
+        val_labels = None
+        test_labels = None
 
     return train_data, train_labels, val_data, val_labels, test_data, test_labels

@@ -25,5 +25,10 @@ dependencies:
   - jupyter_contrib_nbextensions
   - mypy
   - black
+  - python-dotenv
   - pip:
       - tsaug
+      - mlflow
+      - boto3
+      - optuna
+      - vector-quantize-pytorch

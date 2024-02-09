@@ -4,6 +4,7 @@ import torch
 import wandb
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.loggers.csv_logs import CSVLogger
+from lightning.pytorch.loggers.mlflow import MLFlowLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning import Trainer
 
@@ -13,7 +14,8 @@ from model.mlp import MLP
 from model.mlp_bc import MLP_BC
 from model.gru import GRU
 from utils import get_latent_dataloader, print_training_input_shape
-
+from utils import generate_funny_name
+from mlflow_helper import MLFlowLogger as MLFlowLoggerHelper
 
 
 def main(hparams):
@@ -28,26 +30,36 @@ def main(hparams):
     n_cycles = hparams.n_cycles
     dataset = hparams.dataset
     model_name = hparams.model_name
-    use_ids = bool(hparams.use_latent_ids)
     classification_model = model_name.split("-")[0]
     vqvae_model = hparams.vqvae_model
 
     use_wandb = hparams.use_wandb
-    wandb_entity = hparams.wandb_entity
-    wandb_project = hparams.wandb_project
+    logging_entity = hparams.logging_entity
+    logging_project = hparams.logging_project
+    logging_tag = hparams.logging_tag
+
+    use_mlflow = hparams.use_mlflow
+    mlflow_url = hparams.mlflow_url 
+
+    tags = logging_tag.split(",")
 
     if use_wandb:
-        assert wandb_entity is not None, "Wandb entity must be set"
-        assert wandb_project is not None, "Wandb project must be set"
-        logger = WandbLogger(log_model=True, project=wandb_project, entity=wandb_entity)
+        assert logging_entity is not None, "Wandb entity must be set"
+        assert logging_project is not None, "Wandb project must be set"
+        logger = WandbLogger(log_model=True, project=logging_project, entity=logging_entity)
+
+    elif use_mlflow:
+        assert logging_project is not None, "MLflow project must be set"
+        assert mlflow_url is not None, "MLflow URL must be set"
+        mlflow_helper = MLFlowLoggerHelper()
+        tags = [tuple(tag.split(":")) for tag in tags]
+        logger = MLFlowLogger(experiment_name=logging_project, run_name=f"{generate_funny_name()}", tracking_uri=mlflow_url, log_model=True, tags={tag[0]: tag[1] for tag in tags})
     else:
         logger = CSVLogger("logs", name="vq-vae-transformer")
 
 
     data_dict = get_val_test_ids()
-
-
-    input_dim = 2 if dataset == "asimow" else 1
+    input_dim = 2 
 
     val_ids = data_dict["val_ids"]
     test_ids = data_dict["test_ids"]
@@ -58,6 +70,9 @@ def main(hparams):
     else:
         logger.log_hyperparams(
             {"val_ids": str(val_ids), "test_ids": str(test_ids), "model_name": model_name, "artifact_name": vqvae_model})
+        logger.log_hyperparams(
+            hparams
+        )
 
     if dataset == "asimow" or dataset == "latent_vq_vae" or dataset == "latent_vae" \
             or dataset == "latent_vq_vae_out_of_dist" or dataset == "asimow_out_of_dist":
@@ -150,34 +165,43 @@ def main(hparams):
                 "val/mean_acc": best_acc_score,
                 "test/mean_f1_score": test_f1_score,
                 "test/mean_acc": test_acc}
-    if use_wandb:
+    
+    if isinstance(logger, CSVLogger):
+        logger.experiment.log_metrics(logdict)
+    elif isinstance(logger, WandbLogger):
         logger.experiment.log(logdict)
         logger.experiment.finish()
+    elif isinstance(logger, MLFlowLogger):
+        logger.log_metrics(metrics=logdict) # type: ignore
+        logger.finalize()
     else: 
-        logger.experiment.log_metrics(logdict)
+        raise ValueError("Invalid logger")
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Classification Model')
-    parser.add_argument('--epochs', type=int, help='Number of epochs to train', default=5)
-    parser.add_argument('--batch-size', type=int, help='Batch size', default=128)
-    parser.add_argument('--hidden-dim', type=int, help='Hidden dimension', default=1024)
+    parser.add_argument('--epochs', type=int, help='Number of epochs to train', default=30)
+    parser.add_argument('--batch-size', type=int, help='Batch size', default=512)
+    parser.add_argument('--hidden-dim', type=int, help='Hidden dimension', default=758)
     parser.add_argument('--learning-rate', type=float, help='Learning rate', default=0.001)
-    parser.add_argument('--clipping-value', type=float, help='Gradient Clipping', default=0.7)
-    parser.add_argument('--dropout-p', type=float, help='Dropout propability', default=0.15)
-    parser.add_argument('--n-hidden-layer', type=int, help='Number of hidden layers', default=4)
-    parser.add_argument('--model-name', type=str, help='Model name', default="MLP")
-    parser.add_argument('--dataset', type=str, help='Dataset', default="latent_vq_vae")
-    parser.add_argument('--n-cycles', type=int, help='Number of cycles', default=1)
+    parser.add_argument('--clipping-value', type=float, help='Gradient Clipping', default=0.42)
+    parser.add_argument('--dropout-p', type=float, help='Dropout propability', default= 0.032015121309774644)
+    parser.add_argument('--n-hidden-layer', type=int, help='Number of hidden layers', default=6)
+    parser.add_argument('--model-name', type=str, help='Model name', default="GRU")
+    parser.add_argument('--dataset', type=str, help='Dataset', default="asimow")
+    parser.add_argument('--n-cycles', type=int, help='Number of cycles', default=5)
     parser.add_argument('--use-latent-ids', type=int, help='If the dataset with latentspace IDs should be used', default=0)
 
-
     parser.add_argument('--use-wandb', help='Use Weights and Bias (https://wandb.ai/) for Logging', action=argparse.BooleanOptionalAction)
-    parser.add_argument('--wandb-entity', type=str, help='Weights and Bias entity')
-    parser.add_argument('--wandb-project', type=str, help='Weights and Bias project')
+    parser.add_argument('--use-mlflow', help='Use MLflow (https://mlflow.org/docs/latest/index.html) for Logging', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--mlflow-url', type=str, help='URL of the MLflow server', default='http://mlflow.tmdt.uni-wuppertal.de/')
 
-    parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/VQ-VAE-Patch-asimow-best-v2.ckpt")
+    parser.add_argument('--logging-entity', type=str, help='Weights and Bias or MLflow entity')
+    parser.add_argument('--logging-project', type=str, help='Weights and Bias or MLflow project', default="asimow-classification")
+    parser.add_argument('--logging-tag', type=str, help='Logging Tag', default="HyperparamSearch:VQ-VAE-GRU-2")
+
+    parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/vq_vae_patch_best_02.ckpt")
     args = parser.parse_args()
 
     FORMAT = '%(asctime)s - %(levelname)s - %(message)s'

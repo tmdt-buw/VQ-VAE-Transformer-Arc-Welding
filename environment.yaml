@@ -1,4 +1,3 @@
-name: vq-vae
 channels:
   - conda-forge
   - defaults
@@ -10,18 +9,26 @@ dependencies:
   - numba
   - pandas
   - matplotlib
+  - plotly
+  - wandb
   - scikit-learn
+  - pytorch::pytorch
+  - nvidia::cudatoolkit
+  - pytorch::torchvision
+  - pytorch::torchaudio 
+  - lightning
   - openpyxl
   - pip
   - nptdms
-  - plotly
-  - wandb
-  - pytorch::pytorch
-  - nvidia::cudatoolkit=11.7
-  - torchvision
-  - torchaudio 
-  - lightning
-  - seaborn
+  - jupyterlab
+  - nb_conda_kernels
+  - jupyter_contrib_nbextensions
+  - mypy
+  - black
   - python-dotenv
   - pip:
       - tsaug
+      - mlflow
+      - boto3
+      - optuna
+      - vector-quantize-pytorch

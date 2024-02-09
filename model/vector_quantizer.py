@@ -3,7 +3,58 @@ from torch import nn
 from torch.nn import functional as F
 import lightning.pytorch as pl
 from torch import distributed as dist
+from vector_quantize_pytorch import ResidualVQ
 
+
+class ResidualVQLightning(pl.LightningModule):
+    def __init__(self, n_e: int, e_dim: int, kmeans_init: bool = False, kmeans_iters: int = 0, threshold_ema_dead_code: int = 2, 
+                 num_quantizers: int = 1):
+        super().__init__()
+        self.n_e = n_e
+        self.e_dim = e_dim
+        self.kmeans_init = kmeans_init
+        self.kmeans_iters = kmeans_iters
+        self.threshold_ema_dead_code = threshold_ema_dead_code
+        self.num_quantizers = num_quantizers
+        
+        self.vq = ResidualVQ(num_quantizers=num_quantizers, dim=e_dim, codebook_size=n_e,
+            kmeans_init=kmeans_init, kmeans_iters=kmeans_iters, threshold_ema_dead_code=threshold_ema_dead_code)
+        
+        self.save_hyperparameters()
+        
+    def forward(self, x):
+        """
+        Forward pass of the VQ
+        
+        Args:
+            x: (B, seq_len, embed_dim) input tensor
+        
+        Returns:
+            z_q: (B, seq_len, embed_dim) quantized output tensor
+            loss: (1) scalar tensor
+            indices (B, seq_len) indices of z_q
+        """
+        z_q, indices, commit_loss  = self.vq(x)
+        # return loss, z_q, perplexity, min_encodings, min_encoding_indices
+        return commit_loss, z_q, None, None, indices
+    
+    def forward_ood(self, x):
+        """
+        Forward pass of the VQ with OOD loss
+        
+        Args:
+            x: (B, seq_len, embed_dim) input tensor
+            
+        Returns:
+            loss_OOD: (B) OOD loss
+            z_q: (B, seq_len, embed_dim) quantized output tensor
+            indices (B, seq_len) indices of z_q
+            embedding_loss: (1) scalar tensor
+        """
+        z_q, indices, commit_loss  = self.vq(x)
+        loss_OOD = torch.mean((z_q.detach()-x)**2, dim=[1,2])
+        return loss_OOD, z_q, indices, commit_loss
+    
 
 class VectorQuantizer(pl.LightningModule):
     """
@@ -34,7 +85,7 @@ class VectorQuantizer(pl.LightningModule):
         """
         # reshape z -> (batch, embed_dim, num_embeddings_per_seq) and flatten
         # print(z.shape)
-        z_flattened = z.view(-1, self.e_dim)
+        z_flattened = z.reshape(-1, self.e_dim)
         # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
         # print("zflattend", z_flattened.shape)
         d = torch.sum(z_flattened ** 2, dim=1, keepdim=True) + \
