@@ -12,7 +12,7 @@ import lightning.pytorch as pl
 from lightning import Trainer
 
 from dataloader.asimow_dataloader import DataSplitId
-from dataloader.latentspace_dataloader import LatentPredDataModule, get_metadata_and_artifact_dir
+from dataloader.latentspace_dataloader import LatentPredDataModule
 from dataloader.utils import get_val_test_ids
 from model.transformer_decoder import MyTransformerDecoder 
 from utils import get_latent_dataloader, print_training_input_shape, generate_funny_name

@@ -1,7 +1,6 @@
 import logging as log
 from dataloader.asimow_dataloader import DataSplitId
 from dataloader.latentspace_dataloader import LatentPredDataModule, get_metadata_and_artifact_dir
-from model.vq_vae import VectorQuantizedVAE
 from model.vq_vae_patch_embedd import VQVAEPatch
 import random
 
@@ -27,9 +26,7 @@ def get_latent_dataloader(use_wandb: bool, n_cycles: int, model_path: str, val_i
     
     model_name = "VQ-VAE" if model_name == "VQ VAE" else model_name
 
-    if model_name.lower()  == "vq-vae" or model_name.lower()  == "vqvae":
-        model = VectorQuantizedVAE.load_from_checkpoint(model_path)
-    elif model_name.lower() == "vq-vae-patch":
+    if model_name.lower() == "vq-vae-patch":
         model = VQVAEPatch.load_from_checkpoint(model_path) 
     else:
         raise ValueError(f"model name: {model_name} not supported")

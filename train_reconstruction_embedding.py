@@ -6,7 +6,6 @@ import matplotlib
 from dataloader.asimow_dataloader import DataSplitId, ASIMoWDataModule
 from dataloader.latentspace_dataloader import LatentPredDataModule
 from dataloader.utils import get_val_test_ids
-from model.vq_vae import VectorQuantizedVAE
 from model.vq_vae_patch_embedd import VQVAEPatch
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.loggers.csv_logs import CSVLogger
@@ -28,7 +27,7 @@ def print_training_input_shape(data_module):
         log.info(f"Input {i} shape: {batch[i].shape}")
     
 
-def classify_latent_space(latent_model: VectorQuantizedVAE | VQVAEPatch, logger: CSVLogger | WandbLogger | MLFlowLogger, val_ids: list[DataSplitId], 
+def classify_latent_space(latent_model: VQVAEPatch, logger: CSVLogger | WandbLogger | MLFlowLogger, val_ids: list[DataSplitId], 
                           test_ids: list[DataSplitId], n_cycles: int, model_name: str, dataset: str,
                           classification_model: str, learning_rate: float, clipping_value: float):
     
@@ -126,7 +125,6 @@ def main(hparams):
     embedding_dim = hparams.embedding_dim
     n_resblocks = hparams.n_resblocks
     model_name = hparams.model_name
-    decoder_type = hparams.decoder_type
     patch_size = hparams.patch_size
     batch_norm = bool(hparams.batchnorm)
     use_improved_vq = hparams.use_improved_vq
@@ -175,17 +173,11 @@ def main(hparams):
     train_loader_size = len(data_module.train_ds)
     log.info(f"Loaded Data - Train dataset size: {train_loader_size}")
 
-    if model_name == "VQ-VAE":
-        model = VectorQuantizedVAE(
-            input_dim=input_dim, hidden_dim=hidden_dim, num_embeddings=num_embeddings,
-            embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, decoder_type=decoder_type,  dropout_p=dropout_p
-        )
-    elif model_name == "VQ-VAE-Patch":
+    if model_name == "VQ-VAE-Patch":
         model = VQVAEPatch(
             hidden_dim=hidden_dim, input_dim=input_dim, num_embeddings=num_embeddings,
             embedding_dim=embedding_dim, n_resblocks=n_resblocks, learning_rate=learning_rate, dropout_p=dropout_p, patch_size=patch_size, batch_norm=batch_norm,
             use_improved_vq=use_improved_vq, kmeans_iters=kmeans_iters, threshold_ema_dead_code=threshold_ema_dead_code
-
         )
     else:
         raise ValueError("Invalid model name")
@@ -241,9 +233,7 @@ if __name__ == '__main__':
     parser.add_argument('--kmeans-iters', type=int, help='Number of K-Means iterations', default=10)
     parser.add_argument('--threshold-ema-dead-code', type=int, help='Threshold for EMA dead code', default=2)
 
-
     parser.add_argument('--model-name', type=str, help='Model name', default="VQ-VAE-Patch")
-    parser.add_argument('--decoder-type', type=str, help='VQ-VAE Decoder Type', default="Conv")
 
     parser.add_argument('--use-wandb', help='Use Weights and Bias (https://wandb.ai/) for Logging', action=argparse.BooleanOptionalAction)
     parser.add_argument('--use-mlflow', help='Use MLflow (https://mlflow.org/docs/latest/index.html) for Logging', action=argparse.BooleanOptionalAction)

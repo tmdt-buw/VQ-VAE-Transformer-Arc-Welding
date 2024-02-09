@@ -11,7 +11,6 @@ from lightning import Trainer
 from dataloader.asimow_dataloader import DataSplitId, ASIMoWDataModule
 from dataloader.utils import get_val_test_ids
 from model.mlp import MLP
-from model.mlp_bc import MLP_BC
 from model.gru import GRU
 from utils import get_latent_dataloader, print_training_input_shape
 from utils import generate_funny_name
@@ -88,9 +87,6 @@ def main(hparams):
         if classification_model == "MLP":
             seq_len = 200 * n_cycles
             input_dim = 2
-        elif classification_model == "MLP_BC":
-            seq_len = 200 * n_cycles
-            input_dim = 2
         elif classification_model == "GRU":
             seq_len = n_cycles
             input_dim = 200*2
@@ -111,9 +107,6 @@ def main(hparams):
     if classification_model == "MLP":
         Model = MLP
         output_size = 2
-    elif classification_model == "MLP_BC":
-        Model = MLP_BC
-        output_size = 1
     elif classification_model == "GRU":
         Model = GRU
         output_size = 2
@@ -191,15 +184,14 @@ if __name__ == '__main__':
     parser.add_argument('--model-name', type=str, help='Model name', default="GRU")
     parser.add_argument('--dataset', type=str, help='Dataset', default="asimow")
     parser.add_argument('--n-cycles', type=int, help='Number of cycles', default=5)
-    parser.add_argument('--use-latent-ids', type=int, help='If the dataset with latentspace IDs should be used', default=0)
 
     parser.add_argument('--use-wandb', help='Use Weights and Bias (https://wandb.ai/) for Logging', action=argparse.BooleanOptionalAction)
     parser.add_argument('--use-mlflow', help='Use MLflow (https://mlflow.org/docs/latest/index.html) for Logging', action=argparse.BooleanOptionalAction)
-    parser.add_argument('--mlflow-url', type=str, help='URL of the MLflow server', default='http://mlflow.tmdt.uni-wuppertal.de/')
+    parser.add_argument('--mlflow-url', type=str, help='URL of the MLflow server')
 
     parser.add_argument('--logging-entity', type=str, help='Weights and Bias or MLflow entity')
-    parser.add_argument('--logging-project', type=str, help='Weights and Bias or MLflow project', default="asimow-classification")
-    parser.add_argument('--logging-tag', type=str, help='Logging Tag', default="HyperparamSearch:VQ-VAE-GRU-2")
+    parser.add_argument('--logging-project', type=str, help='Weights and Bias or MLflow project')
+    parser.add_argument('--logging-tag', type=str, help='Logging Tag')
 
     parser.add_argument('--vqvae-model', type=str, help='Model URL for wandb or Path', default="model_checkpoints/VQ-VAE-Patch/vq_vae_patch_best_02.ckpt")
     args = parser.parse_args()
@@ -211,6 +203,3 @@ if __name__ == '__main__':
 
     main(args)
     wandb.finish()
-
-
-# python train_transformer_mtasks.py --vqvae-model="model_checkpoints/vq_vae_patch.ckpt" --use-wandb --wandb-entity="tmdt-deep-learning" --wandb-project="asimow-predictive-quality"
